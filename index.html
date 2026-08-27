@@ -825,7 +825,9 @@ function drawHim(){
   ctx.beginPath(); ctx.arc(0, -20 * SC, 90 * SC, 0, 6.2832); ctx.fill();
 
   if (ART.him){
-    const w = 104 * SC, h = w * (ART.him.naturalHeight / ART.him.naturalWidth);
+    /* sized by height, not width — he is a standing figure and has to sit
+       under the chalet roofline whatever his PNG's proportions are */
+    const h = 128 * SC, w = h * (ART.him.naturalWidth / ART.him.naturalHeight);
     ctx.rotate(him.wave ? Math.sin(t * 3) * 0.03 : 0);
     ctx.drawImage(ART.him, -w / 2, -h, w, h);
   } else {
