@@ -342,7 +342,7 @@ const CONFIG = {
   TAUNTS: [ "U CANT DELETE ME", "IM STILL HERE!!!", "MANY HAPPY RETURNS" ],
   /* ---- and then it comes back ---- */
   BOSS_IN:    "oh you have GOT to be kidding.",
-  BOSS_HINT:  "jump into it",
+  BOSS_HINT:  "when it drops — jump into it",
   BOSS_HITS:  3,
   BOSS_DOWN:  "and stay down.",
 
@@ -561,6 +561,9 @@ let scroll = 0, speed = 0, nextSpawn = 0, breakLine = -1, glow = 0;
 let colour = 0, unlocking = false;     /* 0 = drained, 1 = her colour, everywhere */
 let combo = 0, best = 0, slow = 0, land = 0, comboIdx = 0, hitIdx = 0;
 let tauntIdx = 0, flash = 0;
+/* Nobody should have to run the whole pool twice. Reaching the card marks
+   the stage done, and a retry drops her back here instead of the start. */
+let stage1Done = false;
 /* the card, reassembled. phase: 'in' | 'hover' | 'dive' | 'up' | 'dead' */
 const boss = { on:false, x:0, y:0, hp:0, phase:'in', t:0, resolved:false, hurt:0, sway:0 };
 let outro = 0;                                   /* 0..1, the arrival */
@@ -588,11 +591,12 @@ function buildHills(){
     hills.push({ x: i * 150, w: 150 + Math.random() * 130, h: 26 + Math.random() * 46 });
 }
 
-function resetRun(){
+function resetRun(keep){
   obstacles = []; pickups = []; parts = []; floats = []; props = [];
-  candles = 0; frosting = 3; shake = 0; lineIdx = 0; outro = 0;
+  if (!keep){ candles = 0; stage1Done = false; lineIdx = 0; tauntIdx = 0; }
+  frosting = 3; shake = 0; outro = 0;
   combo = 0; slow = 0; land = 0; comboIdx = 0; hitIdx = 0; runner.pose = -1;
-  tauntIdx = 0; flash = 0;
+  flash = 0;
   boss.on = false; boss.hp = 0; boss.phase = 'in'; boss.t = 0; boss.hurt = 0;
   scroll = 0; speed = 300 * SC; nextSpawn = W * 0.9;
   runner.y = groundY; runner.vy = 0; runner.ground = true; runner.ft = 0; runner.hurt = 0;
@@ -1557,9 +1561,12 @@ function startBoss(){
   if (state === S.BOSS) return;
   state = S.BOSS;
   obstacles = []; pickups = [];
-  boss.on = true; boss.hp = CONFIG.BOSS_HITS; boss.phase = 'in';
+  obstacles = [];
+  boss.on = true; boss.hp = CONFIG.BOSS_HITS; boss.phase = 'in'; boss.warned = false;
   boss.t = 0; boss.x = W * 0.72; boss.y = -H * 0.2; boss.resolved = true; boss.hurt = 0;
-  speed = 300 * SC;
+  speed = 260 * SC;
+  stage1Done = true;            // the checkpoint: the run is behind her now
+  frosting = 3; paintHUD();
   toast(CONFIG.BOSS_IN, 2200);
   shake = 22; buzz([40, 60, 40, 60, 90]);
   bossTune();
@@ -1606,26 +1613,29 @@ function updateBoss(dt){
     boss.y += (hover - boss.y) * Math.min(1, dt * 3);
     boss.x += ((runner.x + W * 0.34) - boss.x) * Math.min(1, dt * 1.4)
             + Math.sin(boss.sway * 2.2) * 0.6;
-    if (boss.t > 1.5){ boss.phase = 'dive'; boss.t = 0; boss.resolved = false; }
+    /* it winds up in plain sight, and says so, before it comes down */
+    if (boss.t > 1.15 && !boss.warned){ boss.warned = true; toast('now — jump', 1000); }
+    if (boss.t > 2.1){ boss.phase = 'dive'; boss.t = 0; boss.resolved = false; boss.warned = false; }
   } else if (boss.phase === 'dive'){
-    const k = Math.min(1, boss.t / 0.85);
+    const k = Math.min(1, boss.t / 1.15);      // a slower, readable drop
     boss.x += (runner.x - boss.x) * Math.min(1, dt * 3.4);
     boss.y = hover + (groundY - 96 * SC - hover) * Math.sin(k * Math.PI);
-    if (!boss.resolved && Math.abs(boss.x - runner.x) < 60 * SC &&
-        boss.y > groundY - 190 * SC){
+    /* A generous window, and missing it costs her nothing but another go.
+       This is meant to be an adventure, not a boss rush. */
+    if (!boss.resolved && Math.abs(boss.x - runner.x) < 110 * SC &&
+        boss.y > groundY - 230 * SC){
       boss.resolved = true;
       if (!runner.ground) bossHurt();
       else {
-        frosting--; shake = 18; runner.hurt = 1.2; combo = 0;
-        sfx.hurt(); buzz([12, 40, 12]); paintHUD();
-        if (frosting <= 0){ clearTimeout(bossTuneT); lose(); return; }
-        toast(CONFIG.HIT_LINES[hitIdx++ % CONFIG.HIT_LINES.length], 1300);
+        shake = 12; runner.hurt = 0.7; sfx.hurt(); buzz(30);
+        toast('again — jump as it comes down', 1500);
       }
     }
     if (k >= 1){ boss.phase = 'hover'; boss.t = 0; }
   }
-  /* it still spits its rubbish along the deck between passes */
-  if (boss.phase !== 'dead' && scroll + W > nextSpawn){
+  /* nothing else on the deck while it is diving: two things to watch was
+     the reason this bit read as confusing */
+  if (false && boss.phase !== 'dead' && scroll + W > nextSpawn){
     const x = scroll + W + 40;
     obstacles.push({ x, kind:['letter','balloon','star','cone'][Math.floor(Math.random()*4)],
                      r:21 * SC, tall:false,
@@ -1673,9 +1683,15 @@ function lose(){
 }
 $('retryBtn').onclick = () => {
   $('s-lost').classList.remove('on');
-  resetRun();
-  state = S.PLAY;
-  $('hud').classList.add('on');
+  if (stage1Done){                 // she already did the running part
+    resetRun(true);
+    startBoss();
+  } else {
+    resetRun(false);
+    state = S.PLAY;
+    $('hud').classList.add('on');
+    toast('from where you were.', 1500);
+  }
 };
 function win(){
   state = S.WON;
