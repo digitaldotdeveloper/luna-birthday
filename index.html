@@ -275,6 +275,8 @@
   <div id="reply"></div>
 </div>
 
+<audio id="bgm" src="assets/telepatia.mp3" loop preload="none"></audio>
+
 <button id="mute" aria-label="sound">♪</button>
 
 <script>
@@ -347,6 +349,9 @@ const CONFIG = {
   WIN_TITLE: "Twenty-three.",
   WIN_BODY:  "Twenty-three candles, and I'd carry them all again tomorrow.",
   END_REPLY: "happy birthday, Luna. 💜<br>now come here.",
+
+  /* ---- how loud the song sits under the game ---- */
+  MUSIC_VOL: 0.5,
 
   /* ---- your number, country code first, digits only, no "+" ---- */
   WHATSAPP: "96179193912",
@@ -472,8 +477,43 @@ $('mute').onclick = e => {
   muted = !muted;
   e.currentTarget.textContent = muted ? '♩' : '♪';
   e.currentTarget.style.color = muted ? '#6a5f80' : '';
+  if (bgm){
+    clearInterval(bgmFade);
+    if (muted) bgm.pause();
+    else if (state >= S.PLAY){ bgm.volume = CONFIG.MUSIC_VOL; bgm.play().catch(() => {}); }
+  }
 };
 function buzz(p){ if (navigator.vibrate) try { navigator.vibrate(p); } catch(e){} }
+
+/* ------------------------------------------------------------ the song --
+   It waits out the terrible MIDI and comes in when the colour does.
+   Two things it has to survive: Safari will not play an <audio> element
+   that was not started from a tap, and it will not start one that has
+   downloaded nothing. So her very first tap both primes it and begins
+   fetching, and the real play() happens inside the tap that picks purple. */
+const bgm = $('bgm');
+let bgmFade = null;
+function primeMusic(){
+  if (!bgm) return;
+  bgm.preload = 'auto';
+  bgm.volume = 0;
+  try { bgm.load(); } catch(e){}
+  const pr = bgm.play();
+  if (pr && pr.then) pr.then(() => bgm.pause()).catch(() => {});
+  else { try { bgm.pause(); } catch(e){} }
+}
+function startMusic(){
+  if (!bgm || muted) return;
+  bgm.volume = 0;
+  const pr = bgm.play();
+  if (pr && pr.catch) pr.catch(() => {});
+  clearInterval(bgmFade);
+  bgmFade = setInterval(() => {
+    if (muted){ clearInterval(bgmFade); return; }
+    bgm.volume = Math.min(CONFIG.MUSIC_VOL, bgm.volume + CONFIG.MUSIC_VOL / 30);
+    if (bgm.volume >= CONFIG.MUSIC_VOL - 0.001) clearInterval(bgmFade);
+  }, 50);
+}
 
 /* ------------------------------------------------------------------ art */
 const ART = {};
@@ -585,6 +625,7 @@ function toast(txt, ms){
    =================================================================== */
 $('bigbtn').onclick = () => {
   ac();
+  primeMusic();                 // one tap has to buy both of these
   $('bigbtn').style.display = 'none';
   const dur = playCheesy();
   setTimeout(deadBeat, dur * 1000 + 400);
@@ -651,6 +692,7 @@ function askColour(){
     b.onclick = () => {
       if (state !== S.ASK) return;
       if (o.c === CONFIG.ASK_ANSWER){
+        startMusic();           // inside the tap, or Safari refuses
         b.classList.add('right');
         $('askReply').textContent = CONFIG.ASK_RIGHT;
         tone(523.25, 0, 0.5, { type:'triangle', gain:0.13 });
@@ -1649,7 +1691,12 @@ function listenForBlow(){
 resize();
 resetRun();
 requestAnimationFrame(frame);
-document.addEventListener('visibilitychange', () => { last = performance.now(); });
+document.addEventListener('visibilitychange', () => {
+  last = performance.now();
+  if (!bgm) return;
+  if (document.hidden) bgm.pause();
+  else if (!muted && state >= S.PLAY) bgm.play().catch(() => {});
+});
 </script>
 </body>
 </html>
