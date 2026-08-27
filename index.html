@@ -177,6 +177,19 @@
   #s-lost{ font-family:"Comic Sans MS","Chalkboard SE",cursive; }
   #s-lost h1{ font-family:"Comic Sans MS","Chalkboard SE",cursive; font-style:normal; font-size:30px; }
 
+  /* the only colour left in a drained world, until she picks the right one */
+  #swatches{ display:flex; gap:18px; margin-top:30px; flex-wrap:wrap; justify-content:center; }
+  .sw{
+    width:62px; height:62px; border-radius:50%; border:0; cursor:pointer; padding:0;
+    background:var(--sw); box-shadow:0 0 0 2px rgba(255,255,255,.14), 0 10px 26px rgba(0,0,0,.5);
+    transition:transform .14s ease, box-shadow .2s ease;
+  }
+  .sw:active{ transform:scale(.9); }
+  .sw.wrong{ animation:nope .42s ease; }
+  @keyframes nope{ 25%{transform:translateX(-9px)} 50%{transform:translateX(9px)} 75%{transform:translateX(-5px)} }
+  .sw.right{ transform:scale(1.22); box-shadow:0 0 0 4px rgba(255,255,255,.5), 0 0 60px 12px var(--sw); }
+  #askReply{ min-height:1.5em; }
+
   #reply{ margin-top:22px; font-family:'Fraunces',Georgia,serif; font-style:italic;
           font-size:20px; color:var(--gold); opacity:0; transition:opacity .8s ease;
           min-height:1.4em; padding:0 18px; line-height:1.45; }
@@ -228,6 +241,13 @@
 </div>
 
 <!-- ===================== THE REST ===================== -->
+<div class="screen" id="s-ask">
+  <h1 id="askTitle"></h1>
+  <p class="lead" id="askBody"></p>
+  <div id="swatches"></div>
+  <div class="hint" id="askReply">&nbsp;</div>
+</div>
+
 <div class="screen" id="s-lost">
   <h1>the lame card won 😐</h1>
   <p class="lead">It got frosting everywhere.</p>
@@ -255,14 +275,27 @@ const CONFIG = {
 
   /* ---- optional art. Missing files fall back to drawn versions. ---- */
   ART: {
-    run:    "assets/run.webp",     // his run cycle — one strip, 5 equal cells: 4 running + 1 jump
-    luna:   "assets/luna.webp",    // her, floating in the pool on her ring, waiting at the end
-    cake:   "assets/cake.webp",    // the cake, no candles — the game adds them
-    chalet: "assets/chalet.webp"   // the chalet and pines, scrolling behind him
+    run:      "assets/luna-run.webp", // HER run cycle — one strip, 5 cells: 4 running + 1 jump
+    himcake:  "assets/him-cake.webp", // him, waiting at the end holding the cake
+    chalet:   "assets/chalet.webp",   // the chalet, terrace and pines
+    mountains:"assets/mountains.webp",// the far ridges
+    bunting:  "assets/bunting.webp",  // flags strung over the water
+    lounger:  "assets/lounger.webp",  // deck props, scattered behind her
+    gifts:    "assets/gifts.webp",
+    ladder:   "assets/ladder.webp",
+    floaties: "assets/floaties.webp", // drifting in the pool
+    planter:  "assets/planter.webp"   // the foreground, closest to the lens
   },
 
   /* ---- the lines he says when he kicks the card in ---- */
-  BREAK_LINES: [ "…yeah, no.", "hold on. let me do this properly." ],
+  BREAK_LINES: [ "…yeah, no.", "hold on. one question first." ],
+
+  /* ---- the way in. Get it right and the whole place comes on. ---- */
+  ASK_TITLE:  "one question.",
+  ASK_BODY:   "Before I let you through —<br>what's your favourite colour?",
+  ASK_ANSWER: "purple",
+  ASK_WRONG:  [ "…no.", "not even close.", "you know that's not it.", "try again." ],
+  ASK_RIGHT:  "obviously.",
 
   /* ---- lines that land while she plays (one every 6 candles) ---- */
   LINES: [
@@ -273,7 +306,7 @@ const CONFIG = {
   ],
 
   WIN_TITLE: "Twenty-three.",
-  WIN_BODY:  "Twenty-three candles, carried the whole way, to a girl in a pool.",
+  WIN_BODY:  "Twenty-three candles. You ran the whole pool for every one of them.",
   END_REPLY: "happy birthday, Luna.<br>have the best one. 💜",
 
   /* ---- your number, country code first, digits only, no "+" ---- */
@@ -362,13 +395,12 @@ function noise(when, dur, gain, hp){
   src.start(t0);
 }
 const N = { G4:392, A4:440, B4:493.88, C5:523.25, D5:587.33, E5:659.25, F5:698.46, G5:783.99 };
+/* One phrase, and it is over almost before it starts. The card is a gag,
+   not an interlude — the whole of it lasts about three seconds.          */
 const MELODY = [
-  [N.G4,.75],[N.G4,.25],[N.A4,1],[N.G4,1],[N.C5,1],[N.B4,2],
-  [N.G4,.75],[N.G4,.25],[N.A4,1],[N.G4,1],[N.D5,1],[N.C5,2],
-  [N.G4,.75],[N.G4,.25],[N.G5,1],[N.E5,1],[N.C5,1],[N.B4,1],[N.A4,2],
-  [N.F5,.75],[N.F5,.25],[N.E5,1],[N.C5,1],[N.D5,1],[N.C5,2.5]
+  [N.G4,.75],[N.G4,.25],[N.A4,1],[N.G4,1],[N.C5,1],[N.B4,1.6]
 ];
-const BEAT = 0.42;
+const BEAT = 0.30;
 function playCheesy(){
   let t = 0.25;
   for (const [f, b] of MELODY){
@@ -426,13 +458,14 @@ function runFrame(i, x, y, h){
 }
 
 /* --------------------------------------------------------------- state */
-const S = { CARD:0, DEAD:1, BREAK:2, PLAY:3, LOST:4, WON:5 };
+const S = { CARD:0, DEAD:1, BREAK:2, ASK:3, PLAY:4, LOST:5, WON:6 };
 let state = S.CARD;
 
 let stars = [], lights = [], hills = [], props = [], boards = [];
 let obstacles = [], pickups = [], parts = [], floats = [], cracks = [];
 let candles = 0, frosting = 3, shake = 0, t = 0, lineIdx = 0;
 let scroll = 0, speed = 0, nextSpawn = 0, breakLine = -1, glow = 0;
+let colour = 0, unlocking = false;     /* 0 = drained, 1 = her colour, everywhere */
 let outro = 0;                                   /* 0..1, the arrival */
 
 const runner = { x:0, y:0, vy:0, ground:true, ft:0, hurt:0, held:false, in:0 };
@@ -491,10 +524,8 @@ function deadBeat(){
   state = S.DEAD;
   $('card').classList.add('over');            // everything stops moving
   const go = () => { document.removeEventListener('pointerdown', go); breakIt(); };
-  setTimeout(() => document.addEventListener('pointerdown', go), 1500);
-  /* twist the knife while she is sitting there wondering if that was it */
-  setTimeout(() => { if (state === S.DEAD) $('stoppedSub').textContent = 'u can close the page now'; }, 3200);
-  setTimeout(() => { if (state === S.DEAD) go(); }, 7000);
+  setTimeout(() => document.addEventListener('pointerdown', go), 350);
+  setTimeout(() => { if (state === S.DEAD) go(); }, 850);
 }
 function breakIt(){
   if (state !== S.CARD && state !== S.DEAD) return;
@@ -515,14 +546,67 @@ function breakIt(){
     }
     cracks.push({ pts, grow: 0, sp: 2.4 + Math.random() * 1.6 });
   }
-  setTimeout(() => { sfx.shatter(); shake = 20; }, 620);
-  setTimeout(() => { $('card').classList.add('gone'); sfx.thud(); shake = 26; buzz(120); }, 900);
-  setTimeout(() => { $('card').style.display = 'none'; breakLine = 0; cracks = []; }, 1700);
-  setTimeout(() => { breakLine = 1; }, 3400);
-  setTimeout(startGame, 5400);
+  setTimeout(() => { sfx.shatter(); shake = 20; }, 300);
+  setTimeout(() => { $('card').classList.add('gone'); sfx.thud(); shake = 26; buzz(120); }, 520);
+  setTimeout(() => { $('card').style.display = 'none'; breakLine = 0; cracks = []; }, 950);
+  setTimeout(() => { breakLine = 1; }, 2050);
+  setTimeout(askColour, 3100);
+}
+
+/* ================================================================= the gate
+   He will not let her past until she tells him her own favourite colour,
+   and the world stays drained of every colour until she does.            */
+function askColour(){
+  if (state !== S.BREAK) return;
+  state = S.ASK;
+  breakLine = -1;
+  $('askTitle').textContent = CONFIG.ASK_TITLE;
+  $('askBody').innerHTML    = CONFIG.ASK_BODY;
+  const box = $('swatches');
+  box.innerHTML = '';
+  const opts = [
+    { c:'rose',   hex:'#ff7aa8' }, { c:'teal',   hex:'#3ec9c0' },
+    { c:'purple', hex:'#8b5cf6' }, { c:'gold',   hex:'#ffcf6a' }
+  ];
+  for (let i = opts.length - 1; i > 0; i--){          // so it is never muscle memory
+    const j = Math.floor(Math.random() * (i + 1));
+    [opts[i], opts[j]] = [opts[j], opts[i]];
+  }
+  let wrongs = 0;
+  for (const o of opts){
+    const b = document.createElement('button');
+    b.className = 'sw';
+    b.style.setProperty('--sw', o.hex);
+    b.setAttribute('aria-label', o.c);
+    b.onclick = () => {
+      if (state !== S.ASK) return;
+      if (o.c === CONFIG.ASK_ANSWER){
+        b.classList.add('right');
+        $('askReply').textContent = CONFIG.ASK_RIGHT;
+        tone(523.25, 0, 0.5, { type:'triangle', gain:0.13 });
+        tone(783.99, 0.09, 0.6, { type:'triangle', gain:0.11 });
+        buzz([14, 50, 14]);
+        setTimeout(unlock, 900);
+      } else {
+        b.classList.remove('wrong'); void b.offsetWidth; b.classList.add('wrong');
+        $('askReply').textContent = CONFIG.ASK_WRONG[wrongs++ % CONFIG.ASK_WRONG.length];
+        tone(180, 0, 0.2, { type:'sawtooth', gain:0.1, slide:110 });
+        buzz(40);
+      }
+    };
+    box.appendChild(b);
+  }
+  $('askReply').innerHTML = '&nbsp;';
+  $('s-ask').classList.add('on');
+}
+function unlock(){
+  $('s-ask').classList.remove('on');
+  unlocking = true;                       // colour floods in over the next second
+  sfx.win();
+  setTimeout(startGame, 1100);
 }
 function startGame(){
-  if (state !== S.BREAK) return;
+  if (state === S.PLAY) return;
   state = S.PLAY;
   breakLine = -1;
   $('hud').classList.add('on');
@@ -585,6 +669,7 @@ function update(dt){
   t += dt;
   shake *= Math.pow(0.0016, dt);
   glow += ((state === S.WON ? 1 : 0) - glow) * Math.min(1, dt * 1.2);
+  if (unlocking) colour = Math.min(1, colour + dt * 1.15);
   luna.bob += dt;
   if (state === S.BREAK || state === S.PLAY || state === S.WON)
     runner.in += (1 - runner.in) * Math.min(1, dt * 2.4);
@@ -738,7 +823,7 @@ function drawLights(){
   ctx.stroke();
   for (const l of lights){
     if (l.sx < -30 || l.sx > W + 30) continue;
-    const f = 0.62 + 0.38 * Math.sin(t * 1.5 + l.ph);
+    const f = (0.62 + 0.38 * Math.sin(t * 1.5 + l.ph)) * (0.16 + colour * 0.84);
     const g = ctx.createRadialGradient(l.sx, l.sy, 0, l.sx, l.sy, 13);
     g.addColorStop(0, 'rgba(255,222,150,' + (0.72 * f) + ')');
     g.addColorStop(1, 'rgba(255,200,120,0)');
@@ -876,6 +961,45 @@ function drawForeground(){
     ctx.fillRect(x, y, w, 3 * SC);
   }
 }
+/* Each prop is a picture, a distance and a spacing. The rate is how fast
+   it slides past, which is the only thing that says how far away it is. */
+const PROPS = [
+  { k:'floaties', rate:0.70, per:1600, w:96,  y:() => poolFar + (deckFar - poolFar) * 0.86, seed: 11 },
+  { k:'ladder',   rate:0.94, per:2400, w:56,  y:() => deckFar + 8 * SC,                     seed: 47 },
+  { k:'lounger',  rate:0.94, per:1500, w:132, y:() => deckFar + (groundY - deckFar) * 0.80, seed: 23 },
+  { k:'gifts',    rate:0.94, per:2100, w:62,  y:() => deckFar + (groundY - deckFar) * 0.88, seed: 71 },
+];
+function drawProps(){
+  for (const p of PROPS){
+    const im = ART[p.k];
+    if (!im) continue;
+    const per = p.per * SC, w = p.w * SC;
+    const h = w * (im.naturalHeight / im.naturalWidth);
+    const base = p.y();
+    const off = ((-scroll * p.rate + p.seed * 37) % per + per) % per;
+    for (let i = -1; i < Math.ceil(W / per) + 1; i++){
+      const x = i * per + off;
+      if (x < -w || x > W + w) continue;
+      ctx.drawImage(im, x - w / 2, base - h, w, h);
+    }
+  }
+}
+function drawBunting(){
+  const im = ART.bunting;
+  if (!im) return;
+  const w = W * 1.1, h = w * (im.naturalHeight / im.naturalWidth);
+  const off = ((-scroll * 0.5) % w + w) % w;
+  for (let i = -1; i <= 1; i++)
+    ctx.drawImage(im, i * w + off - w, H * 0.30, w, h);
+}
+function drawMountains(){
+  const im = ART.mountains;
+  if (!im){ drawHills(); return; }
+  const w = W * 1.9, h = w * (im.naturalHeight / im.naturalWidth);
+  const off = ((-scroll * 0.05) % w + w) % w;
+  for (let i = -1; i <= 1; i++)
+    ctx.drawImage(im, i * w + off - w, horizonY - h * 0.94, w, h);
+}
 function drawRunner(){
   if (runner.in < 0.01) return;
   const air = groundY - runner.y;
@@ -957,65 +1081,47 @@ function drawPickup(p){
   ctx.beginPath();
   ctx.ellipse(x, p.y - 6 * SC, 3 * SC, 5.6 * SC * f, 0, 0, 6.2832); ctx.fill();
 }
-/* she is where the run ends: floating in the pool with her cake */
-function drawLuna(){
+/* He is where the run ends, holding the thing he came to give her. */
+function drawEnding(){
   if (outro <= 0.001) return;
-  const e = Math.min(1, outro * 1.5);
-  const waterline = poolFar + (deckFar - poolFar) * 0.66;
-  const x = W + 160 * SC - (W * 0.42 + 160 * SC) * e;
-  const y = waterline + Math.sin(luna.bob * 1.2) * 3 * SC;
-  luna.x = x;
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(Math.sin(luna.bob * 0.9) * 0.025);
-  if (ART.luna){
-    const w = 118 * SC, h = w * (ART.luna.naturalHeight / ART.luna.naturalWidth);
-    /* the ring sits IN the water: the bottom of it is clipped off at the
-       surface, and what is left below is a smear of her on the water */
-    ctx.save();
-    ctx.beginPath(); ctx.rect(-w, -h, w * 2, h * 0.94); ctx.clip();
-    ctx.drawImage(ART.luna, -w / 2, -h * 0.82, w, h);
-    ctx.restore();
-    ctx.globalAlpha = 0.16;
-    ctx.scale(1, -0.32);
-    ctx.drawImage(ART.luna, -w / 2, -h * 0.82, w, h);
-    ctx.globalAlpha = 1;
-  } else {
-    ctx.fillStyle = '#c9a4ff';
-    ctx.beginPath(); ctx.ellipse(0, 0, 46 * SC, 15 * SC, 0, 0, 6.2832); ctx.fill();
-  }
-  ctx.restore();
+  const e = Math.min(1, outro * 1.6);
+  const from = W + 150 * SC, to = W * 0.70;
+  const x = from - (from - to) * e;
+  const y = groundY;
 
-  /* the cake, drifting over to her with everything she collected alight */
-  if (ART.cake && outro > 0.25){
-    const ce = Math.min(1, (outro - 0.25) / 0.5);
-    const cx = runner.x + (x - 78 * SC - runner.x) * ce;
-    const cy = groundY - 40 * SC + (y - 22 * SC - (groundY - 40 * SC)) * ce;
-    const cw = 72 * SC;
-    ctx.save();
-    ctx.translate(cx, cy + Math.sin(luna.bob * 1.4) * 3 * SC);
-    const ch = cw * (ART.cake.naturalHeight / ART.cake.naturalWidth);
-    ctx.drawImage(ART.cake, -cw / 2, -ch / 2, cw, ch);
-    const top = -ch * 0.44, span = cw * 0.70, ROWS = 3;
-    for (let i = 0; i < CONFIG.AGE; i++){
-      const row = i % ROWS, kk = Math.floor(i / ROWS);
-      const n = Math.max(1, Math.ceil((CONFIG.AGE - row) / ROWS));
-      const px = n < 2 ? 0 : -span/2 + (span/(n-1))*kk + (row % 2 ? span/(n*2.4) : 0);
-      const py = top + row * 4.5 * SC, hh = 14 * SC;
-      ctx.fillStyle = row ? '#f3e6ff' : '#e6ccff';
-      ctx.fillRect(px - 1.4 * SC, py - hh, 2.8 * SC, hh);
-      const f = 0.7 + 0.3 * Math.sin(t * 9 + i * 1.7);
-      const g = ctx.createRadialGradient(px, py - hh - 3*SC, 0, px, py - hh - 3*SC, 10*SC);
-      g.addColorStop(0, 'rgba(255,232,170,' + (0.85 * f) + ')');
-      g.addColorStop(1, 'rgba(255,190,90,0)');
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(px, py - hh - 3*SC, 10*SC, 0, 6.2832); ctx.fill();
-      ctx.fillStyle = 'rgba(255,246,214,' + f + ')';
-      ctx.beginPath();
-      ctx.ellipse(px, py - hh - 3*SC, 1.8*SC, 3.2*SC*f, 0, 0, 6.2832); ctx.fill();
-    }
-    ctx.restore();
+  const g = ctx.createRadialGradient(x, y - 90 * SC, 4, x, y - 90 * SC, 130 * SC);
+  g.addColorStop(0, 'rgba(255,214,150,.18)');
+  g.addColorStop(1, 'rgba(255,214,150,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y - 90 * SC, 130 * SC, 0, 6.2832); ctx.fill();
+  ctx.fillStyle = 'rgba(10,4,22,.22)';
+  ctx.beginPath(); ctx.ellipse(x, y + 3 * SC, 30 * SC, 6 * SC, 0, 0, 6.2832); ctx.fill();
+
+  if (ART.himcake){
+    const h = 205 * SC, w = h * (ART.himcake.naturalWidth / ART.himcake.naturalHeight);
+    ctx.drawImage(ART.himcake, x - w / 2, y - h, w, h);
+  } else {
+    ctx.fillStyle = '#1d1030';
+    ctx.beginPath(); ctx.arc(x, y - 150 * SC, 22 * SC, 0, 6.2832); ctx.fill();
+    ctx.fillRect(x - 26 * SC, y - 128 * SC, 52 * SC, 128 * SC);
   }
+  /* the candles she earned, burning on top of what he is holding */
+  const cy = y - 152 * SC, span = 32 * SC, ROWS = 4;   /* sat on the cake he is holding */
+  for (let i = 0; i < candles; i++){
+    const row = i % ROWS, kk = Math.floor(i / ROWS);
+    const n = Math.max(1, Math.ceil((candles - row) / ROWS));
+    const px = x + (n < 2 ? 0 : -span/2 + (span/(n-1))*kk + (row % 2 ? span/(n*2.4) : 0));
+    const py = cy + row * 3.5 * SC;
+    const f = 0.7 + 0.3 * Math.sin(t * 9 + i * 1.7);
+    const gg = ctx.createRadialGradient(px, py, 0, px, py, 8 * SC);
+    gg.addColorStop(0, 'rgba(255,232,170,' + (0.9 * f) + ')');
+    gg.addColorStop(1, 'rgba(255,190,90,0)');
+    ctx.fillStyle = gg;
+    ctx.beginPath(); ctx.arc(px, py, 8 * SC, 0, 6.2832); ctx.fill();
+    ctx.fillStyle = 'rgba(255,246,214,' + f + ')';
+    ctx.beginPath(); ctx.ellipse(px, py, 1.6 * SC, 3 * SC * f, 0, 0, 6.2832); ctx.fill();
+  }
+  luna.x = x;
 }
 function drawCracks(){
   kx.clearRect(0, 0, W, H);
@@ -1047,12 +1153,14 @@ function draw(){
   if (shake > 0.4) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
 
   drawSky();
-  drawHills();
+  drawMountains();
   drawChalet();
   drawLights();
+  drawBunting();
   drawPool();
-  drawLuna();
   drawDeck();
+  drawProps();
+  drawEnding();
 
   for (const p of pickups)   drawPickup(p);
   for (const o of obstacles) drawObstacle(o);
@@ -1084,6 +1192,20 @@ function draw(){
     ctx.shadowBlur = 0;
   }
   ctx.restore();
+
+  /* Everything above is painted in full colour and then drained, so the
+     unlock is one number moving. Blend mode, not ctx.filter — Safari. */
+  if (colour < 0.999){
+    const k = 1 - colour;
+    ctx.save();
+    ctx.globalCompositeOperation = 'saturation';
+    ctx.globalAlpha = k;
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+    ctx.fillStyle = 'rgba(6,4,12,' + (0.42 * k) + ')';
+    ctx.fillRect(0, 0, W, H);
+  }
   drawCracks();
 }
 
