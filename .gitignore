@@ -3,3 +3,4 @@
 *.jpeg
 *.heic
 !share.jpg
+!assets/memory-photo.jpg
