@@ -277,37 +277,52 @@ const CONFIG = {
   ART: {
     run:      "assets/luna-run.webp", // HER run cycle — one strip, 5 cells: 4 running + 1 jump
     himcake:  "assets/him-cake.webp", // him, waiting at the end holding the cake
+    himstand: "assets/him-stand.webp",// him, arms folded, the moment the card comes down
+    poses:    "assets/luna-poses.webp",// her extra poses — 4 cells: idle, land, cheer, kiss
     chalet:   "assets/chalet.webp",   // the chalet, terrace and pines
     mountains:"assets/mountains.webp",// the far ridges
     bunting:  "assets/bunting.webp",  // flags strung over the water
     lounger:  "assets/lounger.webp",  // deck props, scattered behind her
+    cabana:   "assets/cabana.webp",
+    firebowl: "assets/firebowl.webp",
+    champagne:"assets/champagne.webp",
     gifts:    "assets/gifts.webp",
     ladder:   "assets/ladder.webp",
     floaties: "assets/floaties.webp", // drifting in the pool
-    planter:  "assets/planter.webp"   // the foreground, closest to the lens
+    planter:  "assets/palm.webp"      // the foreground, closest to the lens
   },
 
   /* ---- the lines he says when he kicks the card in ---- */
-  BREAK_LINES: [ "…yeah, no.", "hold on. one question first." ],
+  BREAK_LINES: [ "…yeah, no.", "not for you." ],
 
   /* ---- the way in. Get it right and the whole place comes on. ---- */
-  ASK_TITLE:  "one question.",
-  ASK_BODY:   "Before I let you through —<br>what's your favourite colour?",
+  ASK_TITLE:  "prove it's you.",
+  ASK_BODY:   "I'm not letting just anyone in here.<br>What's your colour, birthday girl?",
   ASK_ANSWER: "purple",
-  ASK_WRONG:  [ "…no.", "not even close.", "you know that's not it.", "try again." ],
-  ASK_RIGHT:  "obviously.",
+  ASK_WRONG:  [ "…no. cute, but no.",
+                "wrong. and you're doing that face again.",
+                "nope. I know you better than that.",
+                "try again, gorgeous." ],
+  ASK_RIGHT:  "obviously. it's you.",
+  /* he is standing right there while the card comes down */
 
   /* ---- lines that land while she plays (one every 6 candles) ---- */
   LINES: [
-    "grab every one of them.",
-    "mind the junk — that card is not done with us.",
-    "halfway. she's up ahead.",
-    "almost twenty-three."
+    "there she goes.",
+    "showing off already.",
+    "halfway. and yes, I'm watching.",
+    "almost twenty-three, beautiful."
   ],
+  /* ---- when she strings a few together without getting hit ---- */
+  COMBO_LINES: [ "look at you.", "okay, that was hot.", "unreal.", "marry me." ],
+  /* ---- when the junk gets her ---- */
+  HIT_LINES:   [ "careful, gorgeous.", "I've got you.", "shake it off." ],
+  /* ---- the rare one worth three ---- */
+  HEART_LINE:  "that one's from me.",
 
   WIN_TITLE: "Twenty-three.",
-  WIN_BODY:  "Twenty-three candles. You ran the whole pool for every one of them.",
-  END_REPLY: "happy birthday, Luna.<br>have the best one. 💜",
+  WIN_BODY:  "Twenty-three candles, and I'd carry them all again tomorrow.",
+  END_REPLY: "happy birthday, Luna. 💜<br>now come here.",
 
   /* ---- your number, country code first, digits only, no "+" ---- */
   WHATSAPP: "96179193912",
@@ -421,6 +436,7 @@ const sfx = {
   land(){ noise(0, 0.07, 0.07, 400); },
   candle(i){ tone(560 + (i % 8) * 46, 0, 0.16, { type:'triangle', gain:0.12 }); },
   hurt(){ noise(0, 0.26, 0.22, 240); tone(130, 0, 0.3, { type:'sawtooth', gain:0.14, slide:52 }); },
+  near(){ tone(1180, 0, 0.16, { type:'sine', gain:0.09, slide:1760 }); },
   shatter(){ noise(0, 0.6, 0.34, 1800); noise(0.08, 0.4, 0.2, 900); },
   thud(){ tone(74, 0, 0.42, { type:'sine', gain:0.3, slide:36 }); noise(0, 0.18, 0.18, 200); },
   win(){ [0,130,260,430].forEach((d,i) =>
@@ -447,7 +463,19 @@ const ART = {};
 })();
 /* The run cycle ships as one strip of equal cells: 4 running frames then a
    jump. Slicing by cell index means one request instead of five.          */
-const RUN_CELLS = 5;
+const RUN_CELLS = 5, POSE_CELLS = 4;
+const POSE = { IDLE:0, LAND:1, CHEER:2, KISS:3 };
+/* the two sheets were drawn at different scales: her figure fills more
+   of a pose cell than of a run cell, so the pose cells draw taller to
+   keep her the same size on the deck. */
+const POSE_SCALE = 1.10;
+function cellFrame(im, cells, i, x, y, h){
+  if (!im) return false;
+  const cw = im.naturalWidth / cells, ch = im.naturalHeight;
+  const w = h * (cw / ch);
+  ctx.drawImage(im, i * cw, 0, cw, ch, x - w / 2, y - h, w, h);
+  return true;
+}
 function runFrame(i, x, y, h){
   const im = ART.run;
   if (!im) return false;
@@ -466,10 +494,12 @@ let obstacles = [], pickups = [], parts = [], floats = [], cracks = [];
 let candles = 0, frosting = 3, shake = 0, t = 0, lineIdx = 0;
 let scroll = 0, speed = 0, nextSpawn = 0, breakLine = -1, glow = 0;
 let colour = 0, unlocking = false;     /* 0 = drained, 1 = her colour, everywhere */
+let combo = 0, best = 0, slow = 0, land = 0, comboIdx = 0, hitIdx = 0;
 let outro = 0;                                   /* 0..1, the arrival */
 
-const runner = { x:0, y:0, vy:0, ground:true, ft:0, hurt:0, held:false, in:0 };
+const runner = { x:0, y:0, vy:0, ground:true, ft:0, hurt:0, held:false, in:0, pose:-1 };
 const luna   = { x:0, bob:0 };
+const firass = { in:0 };
 
 function buildStars(){
   stars = [];
@@ -493,6 +523,7 @@ function buildHills(){
 function resetRun(){
   obstacles = []; pickups = []; parts = []; floats = []; props = [];
   candles = 0; frosting = 3; shake = 0; lineIdx = 0; outro = 0;
+  combo = 0; slow = 0; land = 0; comboIdx = 0; hitIdx = 0; runner.pose = -1;
   scroll = 0; speed = 300 * SC; nextSpawn = W * 0.9;
   runner.y = groundY; runner.vy = 0; runner.ground = true; runner.ft = 0; runner.hurt = 0;
   paintHUD();
@@ -609,6 +640,7 @@ function startGame(){
   if (state === S.PLAY) return;
   state = S.PLAY;
   breakLine = -1;
+  runner.pose = -1;              // back to the run cycle; the gate parked her
   $('hud').classList.add('on');
   toast('tap to jump', 1600);
 }
@@ -647,12 +679,13 @@ function spawnAhead(){
     hue: Math.floor(Math.random() * 360), spin: Math.random() * 6.28,
     ds: (Math.random() - 0.5) * 2.2
   });
-  const n = 1 + (Math.random() < 0.4 ? 1 : 0);
+  const heart = candles > 3 && candles < CONFIG.GOAL - 3 && Math.random() < 0.16;
+  const n = heart ? 1 : 1 + (Math.random() < 0.4 ? 1 : 0);
   for (let i = 0; i < n; i++){
     const u = (i - (n - 1) / 2) / Math.max(1, n);
     pickups.push({ x: x + u * 108 * SC,
                    y: groundY - (196 + Math.cos(u * 2.6) * 26) * SC,
-                   ph: Math.random() * 6.28 });
+                   ph: Math.random() * 6.28, heart });
   }
   /* and a stretch of clear deck before the next one */
   nextSpawn = x + (450 + Math.random() * 330) * SC * (1.22 - prog * 0.34);
@@ -671,8 +704,12 @@ function update(dt){
   glow += ((state === S.WON ? 1 : 0) - glow) * Math.min(1, dt * 1.2);
   if (unlocking) colour = Math.min(1, colour + dt * 1.15);
   luna.bob += dt;
-  if (state === S.BREAK || state === S.PLAY || state === S.WON)
+  if (state === S.BREAK || state === S.ASK || state === S.PLAY || state === S.WON)
     runner.in += (1 - runner.in) * Math.min(1, dt * 2.4);
+  /* he stands there, arms folded, for as long as he is the one talking */
+  const wantHim = (state === S.BREAK || state === S.ASK) ? 1 : 0;
+  firass.in += (wantHim - firass.in) * Math.min(1, dt * 3.2);
+  if (state === S.BREAK || state === S.ASK) runner.pose = POSE.IDLE;
 
   for (const c of cracks) c.grow = Math.min(1, c.grow + dt * c.sp);
 
@@ -692,28 +729,41 @@ function update(dt){
     runner.y += runner.vy * dt;
     if (runner.y >= groundY){
       runner.y = groundY; runner.vy = 0; runner.ground = true; runner.held = false;
+      land = 0.20;
       sfx.land();
       burst(runner.x, groundY, '150,120,200', 5, 0.5);
     }
   }
   runner.ft += dt * (runner.ground ? speed / (52 * SC) : 0);
   if (runner.hurt > 0) runner.hurt -= dt;
+  if (land > 0) land -= dt;
 
   if (state === S.PLAY && scroll + W > nextSpawn) spawnAhead();
 
   /* what he is running into */
   for (const o of obstacles){
     o.spin += o.ds * dt;
-    if (o.dead || state !== S.PLAY || runner.hurt > 0) continue;
+    if (o.dead || state !== S.PLAY) continue;
     const sx = o.x - scroll;
+    /* cleared it by a hair — hang on the moment for a third of a second */
+    if (!o.buzzed && !runner.ground && sx < runner.x && sx > runner.x - 30 * SC){
+      const clear = (groundY - o.r * 2.0) - runner.y;
+      o.buzzed = true;
+      if (clear > 0 && clear < 26 * SC){
+        slow = 0.34; sfx.near();
+        burst(sx, groundY - o.r * 2, '255,240,205', 8, 0.6);
+      }
+    }
+    if (runner.hurt > 0) continue;
     if (Math.abs(sx - runner.x) < o.r + 15 * SC &&
         runner.y > groundY - o.r * 2.0){
       o.dead = true;
-      frosting--; shake = 18; runner.hurt = 1.15;
+      frosting--; shake = 18; runner.hurt = 1.15; combo = 0;
       sfx.hurt(); buzz([12, 40, 12]);
       burst(sx, groundY - o.r, '255,120,190', 20, 1.2);
       paintHUD();
       if (frosting <= 0){ lose(); return; }
+      toast(CONFIG.HIT_LINES[hitIdx++ % CONFIG.HIT_LINES.length], 1300);
     }
   }
   for (const p of pickups){
@@ -724,14 +774,22 @@ function update(dt){
     if (Math.abs(sx - runner.x) < 36 * SC &&
         p.y > runner.y - 168 * SC && p.y < runner.y + 22 * SC){
       p.dead = true;
-      candles = Math.min(CONFIG.AGE, candles + 1);
-      sfx.candle(candles); buzz(7);
-      burst(sx, p.y, '255,226,170', 12, 0.9);
-      floats.push({ x:sx, y:p.y, life:0.8, txt:'+1' });
+      const gain = p.heart ? 3 : 1;
+      candles = Math.min(CONFIG.AGE, candles + gain);
+      combo++; best = Math.max(best, combo);
+      sfx.candle(candles); buzz(p.heart ? [8,30,8] : 7);
+      burst(sx, p.y, p.heart ? '255,150,200' : '255,226,170', p.heart ? 26 : 12, p.heart ? 1.5 : 0.9);
+      floats.push({ x:sx, y:p.y, life:0.9, txt:'+' + gain, big:p.heart });
       paintHUD();
-      const step = Math.floor(candles / 6);
-      if (step > lineIdx && lineIdx < CONFIG.LINES.length && candles < CONFIG.GOAL){
-        toast(CONFIG.LINES[lineIdx]); lineIdx = step;
+      if (p.heart) toast(CONFIG.HEART_LINE, 1700);
+      else if (combo > 0 && combo % 6 === 0 && candles < CONFIG.GOAL - 1){
+        toast(CONFIG.COMBO_LINES[comboIdx % CONFIG.COMBO_LINES.length], 1500);
+        comboIdx++;
+      } else {
+        const step = Math.floor(candles / 6);
+        if (step > lineIdx && lineIdx < CONFIG.LINES.length && candles < CONFIG.GOAL){
+          toast(CONFIG.LINES[lineIdx]); lineIdx = step;
+        }
       }
       if (candles >= CONFIG.GOAL){ win(); return; }
     }
@@ -891,9 +949,11 @@ function drawDeck(){
   if (k !== deckKey){
     deckKey = k;
     deckG = ctx.createLinearGradient(0, deckFar, 0, H);
-    deckG.addColorStop(0,    'rgb(68,44,100)');
-    deckG.addColorStop(0.30, 'rgb(52,32,78)');
-    deckG.addColorStop(1,    'rgb(22,12,38)');
+    /* travertine, not decking: warm pale stone falling into shadow */
+    deckG.addColorStop(0,    'rgb(126,106,126)');
+    deckG.addColorStop(0.22, 'rgb(92,74,98)');
+    deckG.addColorStop(0.62, 'rgb(54,40,62)');
+    deckG.addColorStop(1,    'rgb(26,17,34)');
   }
   ctx.fillStyle = deckG;
   ctx.fillRect(-10, deckFar, W + 20, H - deckFar + 10);
@@ -912,7 +972,7 @@ function drawDeck(){
     const u = (i - u0) * P;
     const xf = vx + u * sFar, xn = vx + u * sNear;
     if (Math.max(xf, xn) < -60 || Math.min(xf, xn) > W + 60) continue;
-    ctx.strokeStyle = 'rgba(158,128,208,.10)';
+    ctx.strokeStyle = 'rgba(236,206,158,.13)';       // brushed brass inlay
     ctx.beginPath(); ctx.moveTo(xf, deckFar); ctx.lineTo(xn, H + 10); ctx.stroke();
   }
   /* and the cross seams, which do not move sideways because they are at a
@@ -920,7 +980,7 @@ function drawDeck(){
   for (let i = 1; i <= 6; i++){
     const v = i / 7;
     const y = deckFar + (H - deckFar) * (v * v * 0.86 + v * 0.14);
-    ctx.strokeStyle = 'rgba(158,128,208,' + (0.05 + v * 0.05) + ')';
+    ctx.strokeStyle = 'rgba(236,206,158,' + (0.06 + v * 0.06) + ')';
     ctx.lineWidth = 1 + v * 1.4;
     ctx.beginPath(); ctx.moveTo(-10, y); ctx.lineTo(W + 10, y); ctx.stroke();
   }
@@ -966,8 +1026,11 @@ function drawForeground(){
 const PROPS = [
   { k:'floaties', rate:0.70, per:1600, w:96,  y:() => poolFar + (deckFar - poolFar) * 0.86, seed: 11 },
   { k:'ladder',   rate:0.94, per:2400, w:56,  y:() => deckFar + 8 * SC,                     seed: 47 },
-  { k:'lounger',  rate:0.94, per:1500, w:132, y:() => deckFar + (groundY - deckFar) * 0.80, seed: 23 },
-  { k:'gifts',    rate:0.94, per:2100, w:62,  y:() => deckFar + (groundY - deckFar) * 0.88, seed: 71 },
+  { k:'lounger',  rate:0.94, per:1900, w:132, y:() => deckFar + (groundY - deckFar) * 0.80, seed: 23 },
+  { k:'cabana',   rate:0.94, per:3100, w:212, y:() => deckFar + (groundY - deckFar) * 0.72, seed: 5  },
+  { k:'firebowl', rate:0.94, per:2600, w:76,  y:() => deckFar + (groundY - deckFar) * 0.90, seed: 61 },
+  { k:'champagne',rate:0.94, per:2900, w:70,  y:() => deckFar + (groundY - deckFar) * 0.86, seed: 88 },
+  { k:'gifts',    rate:0.94, per:2400, w:62,  y:() => deckFar + (groundY - deckFar) * 0.88, seed: 71 },
 ];
 function drawProps(){
   for (const p of PROPS){
@@ -1000,6 +1063,23 @@ function drawMountains(){
   for (let i = -1; i <= 1; i++)
     ctx.drawImage(im, i * w + off - w, horizonY - h * 0.94, w, h);
 }
+function drawFirass(){
+  if (firass.in < 0.01 || !ART.himstand) return;
+  const hx = W * 0.66;
+  const y = groundY - (1 - firass.in) * H * 0.45;
+  const h = 205 * SC, w = h * (ART.himstand.naturalWidth / ART.himstand.naturalHeight);
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, firass.in * 1.3);
+  const g = ctx.createRadialGradient(hx, y - 80 * SC, 4, hx, y - 80 * SC, 120 * SC);
+  g.addColorStop(0, 'rgba(201,164,255,.14)');
+  g.addColorStop(1, 'rgba(201,164,255,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(hx, y - 80 * SC, 120 * SC, 0, 6.2832); ctx.fill();
+  ctx.fillStyle = 'rgba(10,4,22,.22)';
+  ctx.beginPath(); ctx.ellipse(hx, y + 3 * SC, 30 * SC, 6 * SC, 0, 0, 6.2832); ctx.fill();
+  ctx.drawImage(ART.himstand, hx - w / 2, y - h, w, h);
+  ctx.restore();
+}
 function drawRunner(){
   if (runner.in < 0.01) return;
   const air = groundY - runner.y;
@@ -1015,10 +1095,19 @@ function drawRunner(){
 
   ctx.save();
   if (runner.hurt > 0 && Math.floor(runner.hurt * 18) % 2) ctx.globalAlpha = 0.35;
-  const frame = !runner.ground ? 4
-              : (state === S.WON && speed < 40 * SC) ? 3
-              : (Math.floor(runner.ft) % 4);
-  if (!runFrame(frame, runner.x, y, h)){
+
+  /* Standing, landing, cheering and blowing a kiss live on a second sheet;
+     only the four running frames and the jump are on the first one. */
+  let drew = false;
+  if (runner.pose >= 0)
+    drew = cellFrame(ART.poses, POSE_CELLS, runner.pose, runner.x, y, h * POSE_SCALE);
+  else if (land > 0 && runner.ground)
+    drew = cellFrame(ART.poses, POSE_CELLS, POSE.LAND, runner.x, y, h * POSE_SCALE);
+  else if (state === S.WON && speed < 40 * SC)
+    drew = cellFrame(ART.poses, POSE_CELLS, POSE.IDLE, runner.x, y, h * POSE_SCALE);
+  if (!drew)
+    drew = runFrame(!runner.ground ? 4 : (Math.floor(runner.ft) % 4), runner.x, y, h);
+  if (!drew){
     ctx.fillStyle = '#1d1030';
     ctx.beginPath(); ctx.arc(runner.x, y - h * 0.84, h * 0.14, 0, 6.2832); ctx.fill();
     ctx.fillRect(runner.x - h * 0.16, y - h * 0.70, h * 0.32, h * 0.44);
@@ -1070,6 +1159,25 @@ function drawObstacle(o){
 function drawPickup(p){
   const x = p.x - scroll;
   const f = 0.72 + 0.28 * Math.sin(p.ph);
+  if (p.heart){
+    const r = 15 * SC * (0.94 + 0.06 * Math.sin(p.ph * 1.6));
+    const gg = ctx.createRadialGradient(x, p.y, 0, x, p.y, 34 * SC);
+    gg.addColorStop(0, 'rgba(255,150,200,' + (0.55 * f) + ')');
+    gg.addColorStop(1, 'rgba(255,120,180,0)');
+    ctx.fillStyle = gg;
+    ctx.beginPath(); ctx.arc(x, p.y, 34 * SC, 0, 6.2832); ctx.fill();
+    ctx.fillStyle = '#ff86b8';
+    ctx.beginPath();
+    ctx.moveTo(x, p.y + r * 0.92);
+    ctx.bezierCurveTo(x - r * 1.5, p.y - r * 0.28, x - r * 0.52, p.y - r * 1.18, x, p.y - r * 0.34);
+    ctx.bezierCurveTo(x + r * 0.52, p.y - r * 1.18, x + r * 1.5, p.y - r * 0.28, x, p.y + r * 0.92);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.6)';
+    ctx.beginPath();
+    ctx.ellipse(x - r * 0.42, p.y - r * 0.42, r * 0.20, r * 0.30, -0.5, 0, 6.2832);
+    ctx.fill();
+    return;
+  }
   const g = ctx.createRadialGradient(x, p.y, 0, x, p.y, 24 * SC);
   g.addColorStop(0, 'rgba(255,232,170,' + (0.5 * f) + ')');
   g.addColorStop(1, 'rgba(255,190,90,0)');
@@ -1161,6 +1269,7 @@ function draw(){
   drawDeck();
   drawProps();
   drawEnding();
+  drawFirass();
 
   for (const p of pickups)   drawPickup(p);
   for (const o of obstacles) drawObstacle(o);
@@ -1211,8 +1320,9 @@ function draw(){
 
 let last = performance.now();
 function frame(now){
-  const dt = Math.min(0.05, (now - last) / 1000);
+  let dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  if (slow > 0){ slow -= dt; dt *= 0.34; }      /* the near-miss hang */
   update(dt);
   draw();
   requestAnimationFrame(frame);
@@ -1235,6 +1345,8 @@ function win(){
   state = S.WON;
   sfx.win(); buzz([14, 60, 14, 60, 120]);
   obstacles = []; pickups = [];
+  runner.pose = POSE.CHEER;
+  setTimeout(() => { if (state === S.WON) runner.pose = POSE.IDLE; }, 2200);
   burst(runner.x, groundY - 60 * SC, '255,226,170', 44, 1.8);
   $('hud').classList.remove('on');
   toast('all twenty-three.', 2400);
@@ -1255,6 +1367,7 @@ function blowOut(){
   $('wishBtn').style.display = 'none';
   $('wishHint').style.display = 'none';
   candles = 0;
+  runner.pose = POSE.KISS;
   noise(0, 0.7, 0.16, 300);
   burst(luna.x || W * 0.6, poolFar + 30 * SC, '255,226,170', 40, 1.5);
   buzz([10, 40, 10]);
