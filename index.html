@@ -255,25 +255,25 @@ const CONFIG = {
 
   /* ---- optional art. Missing files fall back to drawn versions. ---- */
   ART: {
-    him:    "assets/him.webp",     // your character, standing at the pool edge
+    run:    "assets/run.webp",     // his run cycle — one strip, 5 equal cells: 4 running + 1 jump
+    luna:   "assets/luna.webp",    // her, floating in the pool on her ring, waiting at the end
     cake:   "assets/cake.webp",    // the cake, no candles — the game adds them
-    float:  "assets/float.webp",   // the inflatable ring it sits on
-    chalet: "assets/chalet.webp"   // the horizon silhouette
+    chalet: "assets/chalet.webp"   // the chalet and pines, scrolling behind him
   },
 
   /* ---- the lines he says when he kicks the card in ---- */
   BREAK_LINES: [ "…yeah, no.", "hold on. let me do this properly." ],
 
-  /* ---- lines that land while she plays (one every 5 candles) ---- */
+  /* ---- lines that land while she plays (one every 6 candles) ---- */
   LINES: [
-    "there we go.",
-    "keep them off the cake —",
-    "halfway. it's looking real now.",
+    "grab every one of them.",
+    "mind the junk — that card is not done with us.",
+    "halfway. she's up ahead.",
     "almost twenty-three."
   ],
 
   WIN_TITLE: "Twenty-three.",
-  WIN_BODY:  "Twenty-three candles, one cake, and a whole pool to yourself.",
+  WIN_BODY:  "Twenty-three candles, carried the whole way, to a girl in a pool.",
   END_REPLY: "happy birthday, Luna.<br>have the best one. 💜",
 
   /* ---- your number, country code first, digits only, no "+" ---- */
@@ -290,7 +290,10 @@ const ctx = cv.getContext('2d', { alpha:false });
 const kv = $('crack');
 const kx = kv.getContext('2d');
 let W = 0, H = 0, DPR = 1, SC = 1;
-let poolTop = 0, groundY = 0;
+
+/* the world, laid out in bands. Everything above deckFar is distance,
+   everything below deckNear is the boards rushing past your feet.        */
+let horizonY = 0, poolFar = 0, deckFar = 0, groundY = 0, deckNear = 0;
 
 function resize(){
   DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -299,12 +302,17 @@ function resize(){
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   kv.width = cv.width; kv.height = cv.height;
   kx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  SC = Math.max(0.72, Math.min(1.08, H / 780));
-  groundY = H * 0.60;
-  poolTop  = H * 0.66;
-  buildStars(); buildLights();
-  cake.x = W / 2; cake.y = poolTop + (H - poolTop) * 0.42;
-  him.x = W * 0.19; him.y = groundY + (poolTop - groundY) * 0.55;
+  SC = Math.max(0.72, Math.min(1.12, H / 780));
+
+  horizonY = H * 0.41;
+  poolFar  = H * 0.47;      // far lip of the pool
+  deckFar  = H * 0.62;      // where the deck starts
+  groundY  = H * 0.785;     // the line he actually runs on
+  deckNear = H * 0.96;      // near edge, boards blurring past
+
+  buildStars(); buildLights(); buildHills();
+  runner.x = W * 0.27;
+  if (runner.ground) runner.y = groundY;
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 250));
@@ -335,7 +343,6 @@ function tone(freq, when, dur, opt){
     if (o.slide) osc.frequency.exponentialRampToValueAtTime(Math.max(24, o.slide), t0 + dur);
     osc.detune.value = det;
     osc.connect(g); osc.start(t0); osc.stop(t0 + dur + 0.02);
-    return osc;
   };
   mk(0);
   if (o.bad) mk(11);          // the second, slightly-out-of-tune voice
@@ -362,7 +369,6 @@ const MELODY = [
   [N.F5,.75],[N.F5,.25],[N.E5,1],[N.C5,1],[N.D5,1],[N.C5,2.5]
 ];
 const BEAT = 0.42;
-let songEnd = 0;
 function playCheesy(){
   let t = 0.25;
   for (const [f, b] of MELODY){
@@ -372,18 +378,17 @@ function playCheesy(){
   for (let b = 0; b < Math.ceil(t / BEAT); b++){          // the drum machine from hell
     noise(0.25 + b * BEAT, 0.05, b % 2 ? 0.05 : 0.09, b % 2 ? 3800 : 900);
   }
-  songEnd = t + 0.4;
-  return songEnd;
+  return t + 0.4;
 }
-/* the tape dying */
-function warpDown(){
+function warpDown(){                                      // the tape dying
   tone(N.C5, 0, 1.9, { type:'square', gain:0.13, bad:true, slide:38 });
   tone(N.G4, 0.05, 1.9, { type:'sawtooth', gain:0.07, slide:26 });
 }
 const sfx = {
-  pop(){ tone(760 + Math.random() * 260, 0, 0.11, { type:'triangle', gain:0.13 }); },
-  candle(i){ tone(430 + i * 22, 0, 0.2, { type:'triangle', gain:0.11 }); },
-  splat(){ noise(0, 0.28, 0.24, 260); tone(120, 0, 0.3, { type:'sawtooth', gain:0.13, slide:52 }); },
+  jump(){ tone(430, 0, 0.13, { type:'triangle', gain:0.1, slide:760 }); },
+  land(){ noise(0, 0.07, 0.07, 400); },
+  candle(i){ tone(560 + (i % 8) * 46, 0, 0.16, { type:'triangle', gain:0.12 }); },
+  hurt(){ noise(0, 0.26, 0.22, 240); tone(130, 0, 0.3, { type:'sawtooth', gain:0.14, slide:52 }); },
   shatter(){ noise(0, 0.6, 0.34, 1800); noise(0.08, 0.4, 0.2, 900); },
   thud(){ tone(74, 0, 0.42, { type:'sine', gain:0.3, slide:36 }); noise(0, 0.18, 0.18, 200); },
   win(){ [0,130,260,430].forEach((d,i) =>
@@ -408,58 +413,61 @@ const ART = {};
     im.src = src;
   }
 })();
-function sprite(img, w, rot){
-  const h = w * (img.naturalHeight / img.naturalWidth);
-  ctx.save();
-  if (rot) ctx.rotate(rot);
-  ctx.drawImage(img, -w / 2, -h / 2, w, h);
-  ctx.restore();
-  return h;
+/* The run cycle ships as one strip of equal cells: 4 running frames then a
+   jump. Slicing by cell index means one request instead of five.          */
+const RUN_CELLS = 5;
+function runFrame(i, x, y, h){
+  const im = ART.run;
+  if (!im) return false;
+  const cw = im.naturalWidth / RUN_CELLS, ch = im.naturalHeight;
+  const w = h * (cw / ch);
+  ctx.drawImage(im, i * cw, 0, cw, ch, x - w / 2, y - h, w, h);
+  return true;
 }
 
 /* --------------------------------------------------------------- state */
 const S = { CARD:0, DEAD:1, BREAK:2, PLAY:3, LOST:4, WON:5 };
 let state = S.CARD;
 
-let stars = [], lights = [], junk = [], parts = [], floats = [], ripples = [];
-let candles = 0, frosting = 3, spawnT = 0, shake = 0, t = 0, lineIdx = 0;
-let breakT = 0, breakLine = -1, glow = 0, calm = 0;
-const cake = { x:0, y:0, w:0, bob:0, tilt:0 };
-const him  = { x:0, y:0, in:0, wave:0 };
+let stars = [], lights = [], hills = [], props = [], boards = [];
+let obstacles = [], pickups = [], parts = [], floats = [], cracks = [];
+let candles = 0, frosting = 3, shake = 0, t = 0, lineIdx = 0;
+let scroll = 0, speed = 0, nextSpawn = 0, breakLine = -1, glow = 0;
+let outro = 0;                                   /* 0..1, the arrival */
+
+const runner = { x:0, y:0, vy:0, ground:true, ft:0, hurt:0, held:false, in:0 };
+const luna   = { x:0, bob:0 };
 
 function buildStars(){
   stars = [];
-  const n = Math.round((W * groundY) / 5200);
+  const n = Math.round((W * horizonY) / 4200);
   for (let i = 0; i < n; i++)
-    stars.push({ x:Math.random()*W, y:Math.random()*groundY*0.98,
+    stars.push({ x:Math.random()*W, y:Math.random()*horizonY*0.98,
                  r:Math.random()*1.2+0.3, a:Math.random()*0.5+0.2,
                  tw:Math.random()*6.28, sp:Math.random()*1.7+0.4 });
 }
-/* the string lights: two catenaries of warm bulbs across the top */
 function buildLights(){
   lights = [];
-  for (let row = 0; row < 2; row++){
-    const y0 = H * (0.085 + row * 0.075), sag = H * (0.07 + row * 0.02);
-    const n = Math.round(W / 34) + 4;
-    for (let i = 0; i <= n; i++){
-      const u = i / n;
-      lights.push({ x: u * (W + 40) - 20,
-                    y: y0 + Math.sin(u * Math.PI) * sag,
-                    ph: Math.random() * 6.28, row });
-    }
-  }
+  const n = Math.round(W / 30) + 8;
+  for (let i = 0; i <= n; i++) lights.push({ i, ph: Math.random() * 6.28 });
+}
+function buildHills(){
+  hills = [];
+  for (let i = 0; i < 26; i++)
+    hills.push({ x: i * 150, w: 150 + Math.random() * 130, h: 26 + Math.random() * 46 });
 }
 
-function resetGame(){
-  junk = []; parts = []; floats = []; ripples = [];
-  candles = 0; frosting = 3; spawnT = 1.1; shake = 0; lineIdx = 0; glow = 0; calm = 0;
-  cake.bob = 0; cake.tilt = 0;
+function resetRun(){
+  obstacles = []; pickups = []; parts = []; floats = []; props = [];
+  candles = 0; frosting = 3; shake = 0; lineIdx = 0; outro = 0;
+  scroll = 0; speed = 300 * SC; nextSpawn = W * 0.9;
+  runner.y = groundY; runner.vy = 0; runner.ground = true; runner.ft = 0; runner.hurt = 0;
   paintHUD();
 }
 function paintHUD(){
   $('candleCount').innerHTML = 'candles<b>' + candles + '</b>';
-  const pips = document.querySelectorAll('#frosting .pip');
-  pips.forEach((p, i) => p.classList.toggle('gone', i >= frosting));
+  document.querySelectorAll('#frosting .pip')
+          .forEach((p, i) => p.classList.toggle('gone', i >= frosting));
 }
 let toastT = null;
 function toast(txt, ms){
@@ -476,31 +484,25 @@ $('bigbtn').onclick = () => {
   ac();
   $('bigbtn').style.display = 'none';
   const dur = playCheesy();
-  toast('', 1);
   setTimeout(deadBeat, dur * 1000 + 400);
 };
 function deadBeat(){
   if (state !== S.CARD) return;
   state = S.DEAD;
   $('card').classList.add('over');            // everything stops moving
-  /* she gets a long, awkward, completely silent moment here. */
   const go = () => { document.removeEventListener('pointerdown', go); breakIt(); };
   setTimeout(() => document.addEventListener('pointerdown', go), 1500);
   /* twist the knife while she is sitting there wondering if that was it */
   setTimeout(() => { if (state === S.DEAD) $('stoppedSub').textContent = 'u can close the page now'; }, 3200);
   setTimeout(() => { if (state === S.DEAD) go(); }, 7000);
 }
-
-let cracks = [];
 function breakIt(){
   if (state !== S.CARD && state !== S.DEAD) return;
-  state = S.BREAK; breakT = 0; breakLine = -1;
-  him.in = 0;
-  resetGame();
+  state = S.BREAK; breakLine = -1; runner.in = 0;
+  resetRun();
   warpDown();
   buzz([30, 60, 30, 60, 90]);
 
-  /* cracks spread from where his foot lands */
   const ox = W * 0.62, oy = H * 0.42;
   cracks = [];
   for (let i = 0; i < 11; i++){
@@ -519,33 +521,57 @@ function breakIt(){
   setTimeout(() => { breakLine = 1; }, 3400);
   setTimeout(startGame, 5400);
 }
-
 function startGame(){
   if (state !== S.BREAK) return;
   state = S.PLAY;
   breakLine = -1;
   $('hud').classList.add('on');
+  toast('tap to jump', 1600);
 }
 
-/* ------------------------------------------------------------- the junk
-   Everything the lame card left behind, still trying to get to the cake. */
-const JUNK = ['letter', 'balloon', 'star', 'cone'];
+/* ============================================================ the run ===
+   He runs, the world comes at him. One thumb: tap to jump, hold for
+   height. Candles ride above the obstacles, so the jump earns them.     */
+const JUMP_V = -830, GRAV = 2600, GRAV_HELD = 1700;
+
+function jump(){
+  if (state !== S.PLAY) return;
+  if (!runner.ground) return;
+  runner.vy = JUMP_V * SC;
+  runner.ground = false;
+  runner.held = true;
+  sfx.jump(); buzz(9);
+}
+cv.addEventListener('pointerdown', e => { ac(); jump(); });
+cv.addEventListener('pointerup',   () => { runner.held = false; });
+cv.addEventListener('pointercancel', () => { runner.held = false; });
+window.addEventListener('keydown', e => { if (e.code === 'Space'){ e.preventDefault(); ac(); jump(); } });
+window.addEventListener('keyup',   e => { if (e.code === 'Space') runner.held = false; });
+
 const LETTERS = ['H','A','P','P','Y','B','D','A','Y','!'];
-function spawnJunk(){
+const KINDS = ['letter', 'balloon', 'star', 'cone'];
+function spawnAhead(){
   const prog = candles / CONFIG.GOAL;
-  const kind = JUNK[Math.floor(Math.random() * JUNK.length)];
-  const fromTop = Math.random() < 0.55;
-  const x = fromTop ? 20 + Math.random() * (W - 40) : (Math.random() < 0.5 ? -30 : W + 30);
-  const y = fromTop ? -30 : groundY + Math.random() * (poolTop - groundY);
-  const sp = (46 + prog * 62) * (0.85 + Math.random() * 0.4);
-  const dx = cake.x - x, dy = cake.y - y, d = Math.hypot(dx, dy) || 1;
-  junk.push({
-    kind, x, y, r: (kind === 'letter' ? 22 : 20) * SC,
-    vx: dx / d * sp, vy: dy / d * sp,
-    spin: Math.random() * 6.28, ds: (Math.random() - 0.5) * 3.4,
+  const x = scroll + W + 60;
+
+  /* an obstacle, then candles arced over the top of it */
+  const tall = Math.random() < 0.3 + prog * 0.2;
+  const kind = KINDS[Math.floor(Math.random() * KINDS.length)];
+  obstacles.push({
+    x, kind, r: (tall ? 27 : 21) * SC, tall,
     ch: LETTERS[Math.floor(Math.random() * LETTERS.length)],
-    hue: Math.floor(Math.random() * 360)
+    hue: Math.floor(Math.random() * 360), spin: Math.random() * 6.28,
+    ds: (Math.random() - 0.5) * 2.2
   });
+  const n = 1 + (Math.random() < 0.4 ? 1 : 0);
+  for (let i = 0; i < n; i++){
+    const u = (i - (n - 1) / 2) / Math.max(1, n);
+    pickups.push({ x: x + u * 108 * SC,
+                   y: groundY - (196 + Math.cos(u * 2.6) * 26) * SC,
+                   ph: Math.random() * 6.28 });
+  }
+  /* and a stretch of clear deck before the next one */
+  nextSpawn = x + (450 + Math.random() * 330) * SC * (1.22 - prog * 0.34);
 }
 function burst(x, y, col, n, big){
   for (let i = 0; i < n; i++){
@@ -555,82 +581,83 @@ function burst(x, y, col, n, big){
   }
 }
 
-/* ------------------------------------------------------------ the input */
-function tap(px, py){
-  if (state !== S.PLAY) return;
-  let hit = null, best = 1e9;
-  for (const j of junk){
-    if (j.dead) continue;
-    const d = Math.hypot(j.x - px, j.y - py);
-    if (d < j.r + 26 && d < best){ best = d; hit = j; }
-  }
-  if (!hit) return;
-  hit.dead = true;
-  sfx.pop(); buzz(8);
-  burst(hit.x, hit.y, '201,164,255', 15, 1);
-  floats.push({ x:hit.x, y:hit.y, life:0.85, txt:'+1' });
-  candles = Math.min(CONFIG.AGE, candles + 1);
-  sfx.candle(candles);
-  paintHUD();
-  const step = Math.floor(candles / 5);
-  if (step > lineIdx && lineIdx < CONFIG.LINES.length && candles < CONFIG.GOAL){
-    toast(CONFIG.LINES[lineIdx]); lineIdx = step;
-  }
-  if (candles >= CONFIG.GOAL) win();
-}
-function pointAt(e){
-  const p = e.touches ? e.touches[0] : e;
-  return [p.clientX, p.clientY];
-}
-cv.addEventListener('pointerdown', e => { ac(); tap(...pointAt(e)); });
-
-/* --------------------------------------------------------------- update */
 function update(dt){
   t += dt;
   shake *= Math.pow(0.0016, dt);
-  cake.bob += dt;
-  glow += ((state === S.WON ? 1 : 0) - glow) * Math.min(1, dt * 1.4);
-  calm += ((state === S.WON ? 1 : 0) - calm) * Math.min(1, dt * 0.8);
-  if (state === S.BREAK){ breakT += dt; him.in += (1 - him.in) * Math.min(1, dt * 2.2); }
-  if (state === S.PLAY || state === S.WON) him.in += (1 - him.in) * Math.min(1, dt * 3);
-  him.wave = state === S.WON ? Math.min(1, him.wave + dt * 1.6) : 0;
+  glow += ((state === S.WON ? 1 : 0) - glow) * Math.min(1, dt * 1.2);
+  luna.bob += dt;
+  if (state === S.BREAK || state === S.PLAY || state === S.WON)
+    runner.in += (1 - runner.in) * Math.min(1, dt * 2.4);
 
   for (const c of cracks) c.grow = Math.min(1, c.grow + dt * c.sp);
 
+  if (state === S.WON){
+    outro = Math.min(1, outro + dt * 0.5);
+    speed *= Math.pow(0.02, dt);                 // he coasts to a stop
+  }
   if (state === S.PLAY){
-    spawnT -= dt;
-    if (spawnT <= 0){
-      spawnJunk();
-      const prog = candles / CONFIG.GOAL;
-      spawnT = (1.02 - prog * 0.56) * (0.78 + Math.random() * 0.5);
+    const prog = candles / CONFIG.GOAL;
+    speed += ((300 + prog * 300) * SC - speed) * Math.min(1, dt * 0.7);
+  }
+  if (state === S.PLAY || state === S.WON) scroll += speed * dt;
+
+  /* him */
+  if (!runner.ground){
+    runner.vy += (runner.held && runner.vy < 0 ? GRAV_HELD : GRAV) * SC * dt;
+    runner.y += runner.vy * dt;
+    if (runner.y >= groundY){
+      runner.y = groundY; runner.vy = 0; runner.ground = true; runner.held = false;
+      sfx.land();
+      burst(runner.x, groundY, '150,120,200', 5, 0.5);
     }
   }
+  runner.ft += dt * (runner.ground ? speed / (52 * SC) : 0);
+  if (runner.hurt > 0) runner.hurt -= dt;
 
-  for (const j of junk){
-    if (j.dead) continue;
-    j.x += j.vx * dt; j.y += j.vy * dt; j.spin += j.ds * dt;
-    if (state !== S.PLAY) continue;
-    if (Math.hypot(j.x - cake.x, j.y - cake.y) < j.r + cake.w * 0.34){
-      j.dead = true;
-      frosting--; shake = 16; cake.tilt = (Math.random() - 0.5) * 0.5;
-      sfx.splat(); buzz([12, 40, 12]);
-      burst(j.x, j.y, '255,120,190', 20, 1.2);
-      ripples.push({ x:cake.x, y:cake.y, r:6, life:1 });
+  if (state === S.PLAY && scroll + W > nextSpawn) spawnAhead();
+
+  /* what he is running into */
+  for (const o of obstacles){
+    o.spin += o.ds * dt;
+    if (o.dead || state !== S.PLAY || runner.hurt > 0) continue;
+    const sx = o.x - scroll;
+    if (Math.abs(sx - runner.x) < o.r + 15 * SC &&
+        runner.y > groundY - o.r * 2.0){
+      o.dead = true;
+      frosting--; shake = 18; runner.hurt = 1.15;
+      sfx.hurt(); buzz([12, 40, 12]);
+      burst(sx, groundY - o.r, '255,120,190', 20, 1.2);
       paintHUD();
       if (frosting <= 0){ lose(); return; }
     }
   }
-  junk = junk.filter(j => !j.dead && j.x > -90 && j.x < W + 90 && j.y > -90 && j.y < H + 90);
-
-  cake.tilt *= Math.pow(0.08, dt);
-  for (const p of parts){
-    p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 230 * dt; p.life -= dt * 1.2;
+  for (const p of pickups){
+    if (p.dead) continue;
+    p.ph += dt * 3;
+    if (state !== S.PLAY) continue;
+    const sx = p.x - scroll;
+    if (Math.abs(sx - runner.x) < 36 * SC &&
+        p.y > runner.y - 168 * SC && p.y < runner.y + 22 * SC){
+      p.dead = true;
+      candles = Math.min(CONFIG.AGE, candles + 1);
+      sfx.candle(candles); buzz(7);
+      burst(sx, p.y, '255,226,170', 12, 0.9);
+      floats.push({ x:sx, y:p.y, life:0.8, txt:'+1' });
+      paintHUD();
+      const step = Math.floor(candles / 6);
+      if (step > lineIdx && lineIdx < CONFIG.LINES.length && candles < CONFIG.GOAL){
+        toast(CONFIG.LINES[lineIdx]); lineIdx = step;
+      }
+      if (candles >= CONFIG.GOAL){ win(); return; }
+    }
   }
+  obstacles = obstacles.filter(o => !o.dead && o.x - scroll > -140);
+  pickups   = pickups.filter(p => !p.dead && p.x - scroll > -140);
+
+  for (const p of parts){ p.x += p.vx*dt; p.y += p.vy*dt; p.vy += 230*dt; p.life -= dt*1.2; }
   parts = parts.filter(p => p.life > 0);
-  for (const f of floats){ f.y -= 42 * dt; f.life -= dt * 1.25; }
+  for (const f of floats){ f.y -= 44*dt; f.life -= dt*1.25; }
   floats = floats.filter(f => f.life > 0);
-  for (const r of ripples){ r.r += 90 * dt; r.life -= dt * 0.9; }
-  ripples = ripples.filter(r => r.life > 0);
 }
 
 /* ----------------------------------------------------------------- draw */
@@ -641,16 +668,16 @@ function mix(a, b, k){
 }
 let skyG = null, skyKey = '';
 function drawSky(){
-  const k = W + 'x' + H + ':' + Math.round(glow * 30);
+  const k = W + 'x' + H + ':' + Math.round(glow * 26);
   if (k !== skyKey){
     skyKey = k;
-    skyG = ctx.createLinearGradient(0, 0, 0, groundY);
-    skyG.addColorStop(0,   mix([18,7,31],   [30,14,54],  glow));
-    skyG.addColorStop(0.6, mix([32,13,60],  [52,23,92],  glow));
-    skyG.addColorStop(1,   mix([56,25,96],  [86,42,140], glow));
+    skyG = ctx.createLinearGradient(0, 0, 0, horizonY);
+    skyG.addColorStop(0,   mix([16,7,30],  [28,13,52], glow));
+    skyG.addColorStop(0.6, mix([30,12,58], [50,22,90], glow));
+    skyG.addColorStop(1,   mix([58,26,98], [92,46,146], glow));
   }
   ctx.fillStyle = skyG;
-  ctx.fillRect(-30, -30, W + 60, groundY + 60);
+  ctx.fillRect(-30, -30, W + 60, horizonY + 40);
   for (const s of stars){
     ctx.globalAlpha = s.a * (0.5 + 0.5 * Math.sin(t * s.sp + s.tw));
     ctx.fillStyle = '#fff';
@@ -658,248 +685,361 @@ function drawSky(){
   }
   ctx.globalAlpha = 1;
 }
-function drawChalet(){
-  if (ART.chalet){
-    const w = W * 1.02, h = w * (ART.chalet.naturalHeight / ART.chalet.naturalWidth);
-    ctx.drawImage(ART.chalet, -W * 0.01, groundY - h * 0.80, w, h);
-  } else {
-    ctx.fillStyle = '#1a1030';
-    ctx.beginPath(); ctx.moveTo(0, groundY);
-    ctx.lineTo(0, groundY - 44 * SC); ctx.lineTo(W * 0.22, groundY - 78 * SC);
-    ctx.lineTo(W * 0.44, groundY - 44 * SC); ctx.lineTo(W, groundY - 30 * SC);
-    ctx.lineTo(W, groundY); ctx.closePath(); ctx.fill();
+/* layer 1, barely moves — the far side of the valley */
+function drawHills(){
+  const off = (scroll * 0.06) % (26 * 150);
+  ctx.fillStyle = 'rgba(38,20,66,1)';
+  ctx.beginPath(); ctx.moveTo(-40, horizonY);
+  for (let pass = 0; pass < 2; pass++){
+    for (const h of hills){
+      const x = h.x - off + pass * 26 * 150;
+      if (x > W + 200 || x < -260) continue;
+      ctx.lineTo(x, horizonY - h.h * SC);
+      ctx.lineTo(x + h.w * 0.5, horizonY - h.h * SC * 1.25);
+      ctx.lineTo(x + h.w, horizonY - h.h * SC * 0.6);
+    }
   }
-  const deck = ctx.createLinearGradient(0, groundY, 0, poolTop);
-  deck.addColorStop(0, 'rgb(28,15,48)');
-  deck.addColorStop(1, 'rgb(18,9,34)');
-  ctx.fillStyle = deck;
-  ctx.fillRect(-10, groundY - 1, W + 20, poolTop - groundY + 4);
-  const spill = ctx.createRadialGradient(W * 0.26, groundY, 4, W * 0.26, groundY, W * 0.42);
-  spill.addColorStop(0, 'rgba(255,206,130,.13)');
-  spill.addColorStop(1, 'rgba(255,206,130,0)');
-  ctx.fillStyle = spill;
-  ctx.fillRect(-10, groundY - 1, W + 20, poolTop - groundY + 4);
+  ctx.lineTo(W + 40, horizonY); ctx.lineTo(W + 40, horizonY + 30);
+  ctx.lineTo(-40, horizonY + 30); ctx.closePath(); ctx.fill();
 }
+/* layer 2 — the chalet and the pines she is staying in */
+function drawChalet(){
+  if (!ART.chalet) return;
+  const w = W * 1.35, h = w * (ART.chalet.naturalHeight / ART.chalet.naturalWidth);
+  const off = (scroll * 0.17) % w;
+  for (let i = -1; i <= 1; i++)
+    ctx.drawImage(ART.chalet, i * w - off, poolFar - h * 0.86, w, h);
+
+  /* the bank between the pines and the water reads as one black slab
+     otherwise — lift it toward the water and spill the chalet's light */
+  const bank = ctx.createLinearGradient(0, horizonY, 0, poolFar);
+  bank.addColorStop(0,   'rgba(74,44,124,0)');
+  bank.addColorStop(0.7, 'rgba(74,44,124,.20)');
+  bank.addColorStop(1,   'rgba(112,70,178,.38)');
+  ctx.fillStyle = bank;
+  ctx.fillRect(-10, horizonY, W + 20, poolFar - horizonY + 2);
+  const spill = ctx.createLinearGradient(0, poolFar - 46 * SC, 0, poolFar);
+  spill.addColorStop(0, 'rgba(255,206,130,0)');
+  spill.addColorStop(1, 'rgba(255,206,130,.10)');
+  ctx.fillStyle = spill;
+  ctx.fillRect(-10, poolFar - 46 * SC, W + 20, 46 * SC);
+}
+/* layer 3 — the string lights, swinging past */
 function drawLights(){
-  ctx.strokeStyle = 'rgba(255,255,255,.10)'; ctx.lineWidth = 1.2;
-  for (let row = 0; row < 2; row++){
-    ctx.beginPath();
-    const pts = lights.filter(l => l.row === row);
-    pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
-    ctx.stroke();
-  }
+  const span = 30 * SC, sag = H * 0.055, off = (scroll * 0.42) % (span * 8);
+  ctx.strokeStyle = 'rgba(255,255,255,.09)'; ctx.lineWidth = 1.2;
+  ctx.beginPath();
   for (const l of lights){
+    const x = l.i * span - off;
+    const y = H * 0.10 + Math.sin((l.i * span - off) / (span * 8) * Math.PI * 2) * sag;
+    l.sx = x; l.sy = y;
+    l.i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.stroke();
+  for (const l of lights){
+    if (l.sx < -30 || l.sx > W + 30) continue;
     const f = 0.62 + 0.38 * Math.sin(t * 1.5 + l.ph);
-    const g = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, 13);
-    g.addColorStop(0, 'rgba(255,222,150,' + (0.75 * f) + ')');
+    const g = ctx.createRadialGradient(l.sx, l.sy, 0, l.sx, l.sy, 13);
+    g.addColorStop(0, 'rgba(255,222,150,' + (0.72 * f) + ')');
     g.addColorStop(1, 'rgba(255,200,120,0)');
     ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(l.x, l.y, 13, 0, 6.2832); ctx.fill();
+    ctx.beginPath(); ctx.arc(l.sx, l.sy, 13, 0, 6.2832); ctx.fill();
     ctx.fillStyle = 'rgba(255,240,205,' + (0.85 * f) + ')';
-    ctx.beginPath(); ctx.arc(l.x, l.y, 2.1, 0, 6.2832); ctx.fill();
+    ctx.beginPath(); ctx.arc(l.sx, l.sy, 2.1, 0, 6.2832); ctx.fill();
   }
 }
+/* layer 4 — the pool running alongside him, lit from under the water */
 let poolG = null, poolKey = '';
 function drawPool(){
-  const k = W + 'x' + H + ':' + Math.round(calm * 20);
+  const k = W + 'x' + H;
   if (k !== poolKey){
     poolKey = k;
-    poolG = ctx.createLinearGradient(0, poolTop, 0, H);
-    poolG.addColorStop(0,   mix([70,36,140],  [96,52,180], calm));
-    poolG.addColorStop(0.5, mix([52,26,116],  [74,38,152], calm));
-    poolG.addColorStop(1,   mix([30,14,72],   [44,22,100], calm));
+    poolG = ctx.createLinearGradient(0, poolFar, 0, deckFar);
+    poolG.addColorStop(0,   'rgb(58,30,120)');
+    poolG.addColorStop(0.45,'rgb(92,50,180)');
+    poolG.addColorStop(1,   'rgb(126,74,224)');
   }
-  const pad = W * 0.045, r = 22 * SC;
+  ctx.fillStyle = poolG;
+  ctx.fillRect(-10, poolFar, W + 20, deckFar - poolFar);
+  ctx.fillStyle = 'rgba(214,190,255,.22)';
+  ctx.fillRect(-10, poolFar, W + 20, 2 * SC);
   ctx.save();
-  ctx.beginPath();
-  const x0 = pad, y0 = poolTop, x1 = W - pad, y1 = H + 40;
-  ctx.moveTo(x0 + r, y0);
-  ctx.lineTo(x1 - r, y0); ctx.quadraticCurveTo(x1, y0, x1, y0 + r);
-  ctx.lineTo(x1, y1); ctx.lineTo(x0, y1);
-  ctx.lineTo(x0, y0 + r); ctx.quadraticCurveTo(x0, y0, x0 + r, y0);
-  ctx.closePath();
-  ctx.fillStyle = poolG; ctx.fill();
-  ctx.clip();
-
-  /* caustics: slow bright bands crawling across the water */
+  ctx.beginPath(); ctx.rect(-10, poolFar, W + 20, deckFar - poolFar); ctx.clip();
   ctx.globalCompositeOperation = 'lighter';
-  for (let i = 0; i < 9; i++){
-    const yy = poolTop + ((i + 1) / 10) * (H - poolTop);
-    const w = W * (0.34 + 0.24 * Math.sin(t * 0.6 + i));
-    const x = W * 0.5 + Math.sin(t * 0.42 + i * 1.7) * W * 0.3;
-    const g = ctx.createLinearGradient(x - w / 2, 0, x + w / 2, 0);
-    g.addColorStop(0,   'rgba(190,150,255,0)');
-    g.addColorStop(0.5, 'rgba(200,166,255,' + (0.06 + 0.05 * Math.sin(t + i)) + ')');
-    g.addColorStop(1,   'rgba(190,150,255,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(x - w / 2, yy - 7 * SC, w, 14 * SC);
+  /* caustics scroll with the water, slower than the deck: it is further away */
+  for (let i = 0; i < 8; i++){
+    const v = (i + 0.5) / 8;
+    const yy = poolFar + v * (deckFar - poolFar);
+    const per = (120 + v * 130) * SC;               // nearer water, wider ripples
+    const x = ((-scroll * (0.30 + v * 0.5) + i * 61) % per + per) % per - per;
+    for (let n = 0; n < Math.ceil(W / per) + 2; n++){
+      const cx = x + n * per;
+      const g = ctx.createRadialGradient(cx, yy, 0, cx, yy, per * 0.30);
+      g.addColorStop(0, 'rgba(220,194,255,' + (0.11 + 0.05*Math.sin(t*1.4 + i + n)) + ')');
+      g.addColorStop(1, 'rgba(200,166,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(cx, yy, per * 0.30, (3 + v * 5) * SC, 0, 0, 6.2832); ctx.fill();
+    }
   }
-  /* the string lights, smeared into the water */
+  /* the lights, smeared on the surface */
   for (const l of lights){
-    if (l.row) continue;
-    const yy = poolTop + (poolTop - l.y) * 0.30;
-    const g = ctx.createRadialGradient(l.x, yy, 0, l.x, yy, 26);
-    g.addColorStop(0, 'rgba(255,214,140,.10)');
+    if (l.sx == null || l.sx < -40 || l.sx > W + 40) continue;
+    const yy = poolFar + (deckFar - poolFar) * 0.42;
+    const g = ctx.createRadialGradient(l.sx, yy, 0, l.sx, yy, 30);
+    g.addColorStop(0, 'rgba(255,214,140,.13)');
     g.addColorStop(1, 'rgba(255,214,140,0)');
     ctx.fillStyle = g;
-    ctx.beginPath(); ctx.ellipse(l.x, yy, 26, 9, 0, 0, 6.2832); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(l.sx, yy, 30, 10, 0, 0, 6.2832); ctx.fill();
   }
   ctx.globalCompositeOperation = 'source-over';
-
-  for (const rp of ripples){
-    ctx.strokeStyle = 'rgba(255,255,255,' + (0.3 * rp.life) + ')';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.ellipse(rp.x, rp.y + cake.w * 0.3, rp.r, rp.r * 0.34, 0, 0, 6.2832); ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = 'rgba(226,206,255,.30)';
+  ctx.fillRect(-10, deckFar - 3 * SC, W + 20, 3 * SC);
+}
+/* layer 5 — the deck. A band that is lighter far and darker near, with
+   board seams that spread apart as they come toward you. That spread is
+   the whole trick: it reads as a surface tilting away, not a stripe.    */
+let deckG = null, deckKey = '';
+function drawDeck(){
+  const k = W + 'x' + H;
+  if (k !== deckKey){
+    deckKey = k;
+    deckG = ctx.createLinearGradient(0, deckFar, 0, H);
+    deckG.addColorStop(0,    'rgb(68,44,100)');
+    deckG.addColorStop(0.30, 'rgb(52,32,78)');
+    deckG.addColorStop(1,    'rgb(22,12,38)');
   }
-  /* her age, written on the bottom of the pool, only once it is calm */
-  if (calm > 0.02){
-    ctx.globalAlpha = calm * 0.5;
-    ctx.fillStyle = 'rgba(230,210,255,1)';
-    ctx.font = '700 ' + Math.round(H * 0.16) + "px 'Nunito',sans-serif";
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(String(CONFIG.AGE), W / 2, poolTop + (H - poolTop) * 0.72);
-    ctx.globalAlpha = 1;
+  ctx.fillStyle = deckG;
+  ctx.fillRect(-10, deckFar, W + 20, H - deckFar + 10);
+
+  /* The boards run away from the camera, so their seams all point at one
+     vanishing point on the horizon. Near the camera they are far apart,
+     at the far edge they crowd together — that spread is the depth. */
+  ctx.save();
+  ctx.beginPath(); ctx.rect(-10, deckFar, W + 20, H - deckFar + 10); ctx.clip();
+  const vx = W * 0.5;
+  const sFar = 0.30, sNear = 1.55;            // how wide a board reads at each edge
+  const P = 78 * SC;                          // board width in world units
+  const u0 = (scroll % P) / P;
+  ctx.lineWidth = 1.4;
+  for (let i = -Math.ceil(W / (P * sFar)); i < Math.ceil(W / (P * sFar)); i++){
+    const u = (i - u0) * P;
+    const xf = vx + u * sFar, xn = vx + u * sNear;
+    if (Math.max(xf, xn) < -60 || Math.min(xf, xn) > W + 60) continue;
+    ctx.strokeStyle = 'rgba(158,128,208,.10)';
+    ctx.beginPath(); ctx.moveTo(xf, deckFar); ctx.lineTo(xn, H + 10); ctx.stroke();
+  }
+  /* and the cross seams, which do not move sideways because they are at a
+     fixed distance — their spacing alone says how far away each one is */
+  for (let i = 1; i <= 6; i++){
+    const v = i / 7;
+    const y = deckFar + (H - deckFar) * (v * v * 0.86 + v * 0.14);
+    ctx.strokeStyle = 'rgba(158,128,208,' + (0.05 + v * 0.05) + ')';
+    ctx.lineWidth = 1 + v * 1.4;
+    ctx.beginPath(); ctx.moveTo(-10, y); ctx.lineTo(W + 10, y); ctx.stroke();
   }
   ctx.restore();
 
-  ctx.strokeStyle = 'rgba(200,170,255,.20)'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(pad, poolTop); ctx.lineTo(W - pad, poolTop); ctx.stroke();
+  /* the wet lip of the pool, and the line he is actually standing on */
+  ctx.fillStyle = 'rgba(226,206,255,.16)';
+  ctx.fillRect(-10, deckFar, W + 20, 2.5 * SC);
+  const gl = ctx.createLinearGradient(0, groundY - 40 * SC, 0, groundY + 3);
+  gl.addColorStop(0, 'rgba(255,220,170,0)');
+  gl.addColorStop(1, 'rgba(255,220,170,.08)');
+  ctx.fillStyle = gl;
+  ctx.fillRect(-10, groundY - 40 * SC, W + 20, 43 * SC);
+  ctx.fillStyle = 'rgba(255,228,186,.14)';
+  ctx.fillRect(-10, groundY, W + 20, 1.5 * SC);
 }
-function drawCake(){
-  const bob = Math.sin(cake.bob * 1.3) * 4 * SC;
-  cake.w = Math.min(W * 0.30, 128 * SC);
-  ctx.save();
-  ctx.translate(cake.x, cake.y + bob);
-  ctx.rotate(Math.sin(cake.bob * 0.9) * 0.028 + cake.tilt);
-
-  if (ART.float) sprite(ART.float, cake.w * 1.72);
-  else {
-    ctx.fillStyle = '#8a5cf0';
-    ctx.beginPath(); ctx.ellipse(0, cake.w * 0.30, cake.w * 0.86, cake.w * 0.27, 0, 0, 6.2832); ctx.fill();
-    ctx.fillStyle = '#12071f';
-    ctx.beginPath(); ctx.ellipse(0, cake.w * 0.30, cake.w * 0.40, cake.w * 0.12, 0, 0, 6.2832); ctx.fill();
-  }
-  let ch;
-  if (ART.cake) ch = sprite(ART.cake, cake.w);
-  else {
-    ch = cake.w * 0.95;
-    ctx.fillStyle = '#d9bcff';
-    ctx.fillRect(-cake.w * 0.42, -cake.w * 0.10, cake.w * 0.84, cake.w * 0.34);
-    ctx.fillStyle = '#c9a4ff';
-    ctx.fillRect(-cake.w * 0.30, -cake.w * 0.40, cake.w * 0.60, cake.w * 0.32);
-  }
-  /* the candles she has earned, planted across the top tier */
-  const top = -ch * 0.44, span = cake.w * 0.70;
-  const ROWS = candles > 14 ? 3 : candles > 6 ? 2 : 1;
-  const per = Math.ceil(candles / ROWS);
-  for (let i = 0; i < candles; i++){
-    const row = i % ROWS, k = Math.floor(i / ROWS);
-    const n = Math.max(1, Math.ceil((candles - row) / ROWS));
-    const x = n < 2 ? 0
-            : -span / 2 + (span / (n - 1)) * k + (row % 2 ? span / (n * 2.4) : 0);
-    const y = top + row * 4.5 * SC;
-    const hgt = 15 * SC;
-    ctx.fillStyle = row ? '#f3e6ff' : '#e6ccff';
-    ctx.fillRect(x - 1.5 * SC, y - hgt, 3 * SC, hgt);
-    const f = 0.7 + 0.3 * Math.sin(t * 9 + i * 1.7);
-    const g = ctx.createRadialGradient(x, y - hgt - 3 * SC, 0, x, y - hgt - 3 * SC, 11 * SC);
-    g.addColorStop(0, 'rgba(255,232,170,' + (0.85 * f) + ')');
-    g.addColorStop(1, 'rgba(255,190,90,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(x, y - hgt - 3 * SC, 11 * SC, 0, 6.2832); ctx.fill();
-    ctx.fillStyle = 'rgba(255,246,214,' + f + ')';
+/* layer 6 — planters whipping past below him, the nearest thing there is */
+function drawForeground(){
+  const per = 300 * SC;
+  const off = ((-scroll * 1.55) % per + per) % per;
+  for (let i = -1; i < Math.ceil(W / per) + 1; i++){
+    const x = i * per + off;
+    const w = 128 * SC, y = deckNear - 8 * SC;
+    /* the shrub, then the pot — one silhouette, close enough to the lens
+       that it runs off the bottom of the screen */
+    ctx.fillStyle = 'rgba(26,13,44,.96)';
     ctx.beginPath();
-    ctx.ellipse(x, y - hgt - 3 * SC, 1.9 * SC, 3.4 * SC * f, 0, 0, 6.2832); ctx.fill();
+    ctx.moveTo(x + w * 0.10, y);
+    ctx.bezierCurveTo(x - w * 0.04, y - 40 * SC, x + w * 0.22, y - 74 * SC, x + w * 0.50, y - 62 * SC);
+    ctx.bezierCurveTo(x + w * 0.80, y - 80 * SC, x + w * 1.04, y - 34 * SC, x + w * 0.90, y);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(17,8,30,.98)';
+    ctx.beginPath();
+    ctx.moveTo(x, y); ctx.lineTo(x + w, y);
+    ctx.lineTo(x + w - 17 * SC, H + 30); ctx.lineTo(x + 17 * SC, H + 30);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(120,88,180,.16)';
+    ctx.fillRect(x, y, w, 3 * SC);
   }
-  ctx.restore();
 }
-function drawHim(){
-  if (him.in < 0.01) return;
-  const y = him.y - (1 - him.in) * H * 0.5;
-  ctx.save();
-  ctx.translate(him.x, y);
-  ctx.globalAlpha = Math.min(1, him.in * 1.4);
-  const g = ctx.createRadialGradient(0, -20 * SC, 4, 0, -20 * SC, 90 * SC);
-  g.addColorStop(0, 'rgba(201,164,255,.16)'); g.addColorStop(1, 'rgba(201,164,255,0)');
-  ctx.fillStyle = g;
-  ctx.beginPath(); ctx.arc(0, -20 * SC, 90 * SC, 0, 6.2832); ctx.fill();
+function drawRunner(){
+  if (runner.in < 0.01) return;
+  const air = groundY - runner.y;
+  const y = runner.y - (1 - runner.in) * H * 0.55;
+  const h = 152 * SC;
 
-  if (ART.him){
-    /* sized by height, not width — he is a standing figure and has to sit
-       under the chalet roofline whatever his PNG's proportions are */
-    const h = 128 * SC, w = h * (ART.him.naturalWidth / ART.him.naturalHeight);
-    ctx.rotate(him.wave ? Math.sin(t * 3) * 0.03 : 0);
-    ctx.drawImage(ART.him, -w / 2, -h, w, h);
-  } else {
+  /* contact shadow: it shrinks and fades as he leaves the boards */
+  const k = Math.max(0, 1 - air / (170 * SC));
+  ctx.fillStyle = 'rgba(10,4,22,' + (0.22 * k) + ')';
+  ctx.beginPath();
+  ctx.ellipse(runner.x, groundY + 3 * SC, 26 * SC * (0.55 + k * 0.45), 5.5 * SC * k, 0, 0, 6.2832);
+  ctx.fill();
+
+  ctx.save();
+  if (runner.hurt > 0 && Math.floor(runner.hurt * 18) % 2) ctx.globalAlpha = 0.35;
+  const frame = !runner.ground ? 4
+              : (state === S.WON && speed < 40 * SC) ? 3
+              : (Math.floor(runner.ft) % 4);
+  if (!runFrame(frame, runner.x, y, h)){
     ctx.fillStyle = '#1d1030';
-    ctx.beginPath(); ctx.arc(0, -84 * SC, 15 * SC, 0, 6.2832); ctx.fill();
-    ctx.fillRect(-17 * SC, -70 * SC, 34 * SC, 46 * SC);
-    ctx.fillRect(-14 * SC, -25 * SC, 11 * SC, 26 * SC);
-    ctx.fillRect(3 * SC, -25 * SC, 11 * SC, 26 * SC);
+    ctx.beginPath(); ctx.arc(runner.x, y - h * 0.84, h * 0.14, 0, 6.2832); ctx.fill();
+    ctx.fillRect(runner.x - h * 0.16, y - h * 0.70, h * 0.32, h * 0.44);
+    ctx.fillRect(runner.x - h * 0.13, y - h * 0.26, h * 0.10, h * 0.26);
+    ctx.fillRect(runner.x + h * 0.03, y - h * 0.26, h * 0.10, h * 0.26);
   }
-  ctx.globalAlpha = 1;
   ctx.restore();
 }
 /* the leftovers of the terrible card, drawn as badly as they deserve */
-function drawJunk(j){
+function drawObstacle(o){
+  const x = o.x - scroll, r = o.r;
+  ctx.fillStyle = 'rgba(0,0,0,.30)';
+  ctx.beginPath(); ctx.ellipse(x, groundY + 3 * SC, r * 0.9, 7 * SC, 0, 0, 6.2832); ctx.fill();
   ctx.save();
-  ctx.translate(j.x, j.y); ctx.rotate(j.spin); ctx.scale(SC, SC);
+  ctx.translate(x, groundY - r);
+  ctx.rotate(Math.sin(o.spin) * 0.13);
+  ctx.scale(SC * (o.tall ? 1.3 : 1), SC * (o.tall ? 1.3 : 1));
   ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.lineJoin = 'round';
-  if (j.kind === 'letter'){
+  if (o.kind === 'letter'){
     const g = ctx.createLinearGradient(0, -20, 0, 20);
     g.addColorStop(0, '#ff2d2d'); g.addColorStop(0.4, '#ffe600');
     g.addColorStop(0.75, '#22ff44'); g.addColorStop(1, '#00c8ff');
     ctx.font = '900 40px Impact,"Arial Black",sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.strokeText(j.ch, 0, 1); ctx.fillStyle = g; ctx.fillText(j.ch, 0, 1);
-  } else if (j.kind === 'balloon'){
-    ctx.fillStyle = 'hsl(' + j.hue + ',95%,55%)';
+    ctx.strokeText(o.ch, 0, 1); ctx.fillStyle = g; ctx.fillText(o.ch, 0, 1);
+  } else if (o.kind === 'balloon'){
+    ctx.fillStyle = 'hsl(' + o.hue + ',95%,55%)';
     ctx.beginPath(); ctx.ellipse(0, -3, 15, 19, 0, 0, 6.2832); ctx.fill(); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(0, 16); ctx.lineTo(-4, 22); ctx.lineTo(4, 22); ctx.closePath();
     ctx.fill(); ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,.85)';
     ctx.beginPath(); ctx.ellipse(-5, -9, 4, 6, -0.4, 0, 6.2832); ctx.fill();
-  } else if (j.kind === 'star'){
+  } else if (o.kind === 'star'){
     ctx.beginPath();
     for (let i = 0; i < 10; i++){
-      const r = i % 2 ? 8 : 19, a = (i / 10) * 6.2832 - 1.57;
-      i ? ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r)
-        : ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      const rr = i % 2 ? 8 : 19, a = (i / 10) * 6.2832 - 1.57;
+      i ? ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr)
+        : ctx.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
     }
     ctx.closePath(); ctx.fillStyle = '#ffe600'; ctx.fill(); ctx.stroke();
   } else {
     ctx.fillStyle = '#ff9d00';
     ctx.beginPath(); ctx.moveTo(0, -18); ctx.lineTo(15, 16); ctx.lineTo(-15, 16);
     ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(-11, -2, 22, 6);
+    ctx.fillStyle = '#fff'; ctx.fillRect(-11, -2, 22, 6);
   }
   ctx.restore();
+}
+function drawPickup(p){
+  const x = p.x - scroll;
+  const f = 0.72 + 0.28 * Math.sin(p.ph);
+  const g = ctx.createRadialGradient(x, p.y, 0, x, p.y, 24 * SC);
+  g.addColorStop(0, 'rgba(255,232,170,' + (0.5 * f) + ')');
+  g.addColorStop(1, 'rgba(255,190,90,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, p.y, 24 * SC, 0, 6.2832); ctx.fill();
+  ctx.fillStyle = '#f3e6ff';
+  ctx.fillRect(x - 2.4 * SC, p.y - 2 * SC, 4.8 * SC, 20 * SC);
+  ctx.fillStyle = 'rgba(255,246,214,' + f + ')';
+  ctx.beginPath();
+  ctx.ellipse(x, p.y - 6 * SC, 3 * SC, 5.6 * SC * f, 0, 0, 6.2832); ctx.fill();
+}
+/* she is where the run ends: floating in the pool with her cake */
+function drawLuna(){
+  if (outro <= 0.001) return;
+  const e = Math.min(1, outro * 1.5);
+  const waterline = poolFar + (deckFar - poolFar) * 0.66;
+  const x = W + 160 * SC - (W * 0.42 + 160 * SC) * e;
+  const y = waterline + Math.sin(luna.bob * 1.2) * 3 * SC;
+  luna.x = x;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(Math.sin(luna.bob * 0.9) * 0.025);
+  if (ART.luna){
+    const w = 118 * SC, h = w * (ART.luna.naturalHeight / ART.luna.naturalWidth);
+    /* the ring sits IN the water: the bottom of it is clipped off at the
+       surface, and what is left below is a smear of her on the water */
+    ctx.save();
+    ctx.beginPath(); ctx.rect(-w, -h, w * 2, h * 0.94); ctx.clip();
+    ctx.drawImage(ART.luna, -w / 2, -h * 0.82, w, h);
+    ctx.restore();
+    ctx.globalAlpha = 0.16;
+    ctx.scale(1, -0.32);
+    ctx.drawImage(ART.luna, -w / 2, -h * 0.82, w, h);
+    ctx.globalAlpha = 1;
+  } else {
+    ctx.fillStyle = '#c9a4ff';
+    ctx.beginPath(); ctx.ellipse(0, 0, 46 * SC, 15 * SC, 0, 0, 6.2832); ctx.fill();
+  }
+  ctx.restore();
+
+  /* the cake, drifting over to her with everything she collected alight */
+  if (ART.cake && outro > 0.25){
+    const ce = Math.min(1, (outro - 0.25) / 0.5);
+    const cx = runner.x + (x - 78 * SC - runner.x) * ce;
+    const cy = groundY - 40 * SC + (y - 22 * SC - (groundY - 40 * SC)) * ce;
+    const cw = 72 * SC;
+    ctx.save();
+    ctx.translate(cx, cy + Math.sin(luna.bob * 1.4) * 3 * SC);
+    const ch = cw * (ART.cake.naturalHeight / ART.cake.naturalWidth);
+    ctx.drawImage(ART.cake, -cw / 2, -ch / 2, cw, ch);
+    const top = -ch * 0.44, span = cw * 0.70, ROWS = 3;
+    for (let i = 0; i < CONFIG.AGE; i++){
+      const row = i % ROWS, kk = Math.floor(i / ROWS);
+      const n = Math.max(1, Math.ceil((CONFIG.AGE - row) / ROWS));
+      const px = n < 2 ? 0 : -span/2 + (span/(n-1))*kk + (row % 2 ? span/(n*2.4) : 0);
+      const py = top + row * 4.5 * SC, hh = 14 * SC;
+      ctx.fillStyle = row ? '#f3e6ff' : '#e6ccff';
+      ctx.fillRect(px - 1.4 * SC, py - hh, 2.8 * SC, hh);
+      const f = 0.7 + 0.3 * Math.sin(t * 9 + i * 1.7);
+      const g = ctx.createRadialGradient(px, py - hh - 3*SC, 0, px, py - hh - 3*SC, 10*SC);
+      g.addColorStop(0, 'rgba(255,232,170,' + (0.85 * f) + ')');
+      g.addColorStop(1, 'rgba(255,190,90,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(px, py - hh - 3*SC, 10*SC, 0, 6.2832); ctx.fill();
+      ctx.fillStyle = 'rgba(255,246,214,' + f + ')';
+      ctx.beginPath();
+      ctx.ellipse(px, py - hh - 3*SC, 1.8*SC, 3.2*SC*f, 0, 0, 6.2832); ctx.fill();
+    }
+    ctx.restore();
+  }
 }
 function drawCracks(){
   kx.clearRect(0, 0, W, H);
   if (!cracks.length) return;
-  const ctx = kx;                       // shadow the scene context on purpose
-  ctx.save();
-  ctx.lineCap = 'round';
+  const c2 = kx;
+  c2.save(); c2.lineCap = 'round';
   for (const c of cracks){
     if (c.grow <= 0) continue;
     const n = c.pts.length - 1, upto = c.grow * n;
-    ctx.beginPath(); ctx.moveTo(c.pts[0].x, c.pts[0].y);
+    c2.beginPath(); c2.moveTo(c.pts[0].x, c.pts[0].y);
     for (let i = 1; i <= n; i++){
-      if (i <= upto) ctx.lineTo(c.pts[i].x, c.pts[i].y);
+      if (i <= upto) c2.lineTo(c.pts[i].x, c.pts[i].y);
       else {
         const f = upto - (i - 1);
         if (f <= 0) break;
-        ctx.lineTo(c.pts[i-1].x + (c.pts[i].x - c.pts[i-1].x) * f,
-                   c.pts[i-1].y + (c.pts[i].y - c.pts[i-1].y) * f);
+        c2.lineTo(c.pts[i-1].x + (c.pts[i].x - c.pts[i-1].x) * f,
+                  c.pts[i-1].y + (c.pts[i].y - c.pts[i-1].y) * f);
         break;
       }
     }
-    ctx.strokeStyle = 'rgba(255,255,255,.92)'; ctx.lineWidth = 3.4; ctx.stroke();
-    ctx.strokeStyle = 'rgba(190,150,255,.55)'; ctx.lineWidth = 8; ctx.stroke();
+    c2.strokeStyle = 'rgba(255,255,255,.92)'; c2.lineWidth = 3.4; c2.stroke();
+    c2.strokeStyle = 'rgba(190,150,255,.55)'; c2.lineWidth = 8; c2.stroke();
   }
-  ctx.restore();
+  c2.restore();
 }
 
 function draw(){
@@ -907,13 +1047,17 @@ function draw(){
   if (shake > 0.4) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
 
   drawSky();
-  drawLights();
+  drawHills();
   drawChalet();
+  drawLights();
   drawPool();
-  drawHim();
-  drawCake();
+  drawLuna();
+  drawDeck();
 
-  for (const j of junk) drawJunk(j);
+  for (const p of pickups)   drawPickup(p);
+  for (const o of obstacles) drawObstacle(o);
+  drawRunner();
+  drawForeground();
 
   for (const p of parts){
     ctx.globalAlpha = Math.max(0, p.life);
@@ -931,17 +1075,15 @@ function draw(){
   }
   ctx.globalAlpha = 1;
 
-  /* what he says as he lands */
   if (state === S.BREAK && breakLine >= 0){
     ctx.fillStyle = '#f3ecff';
     ctx.font = "italic 600 " + Math.round(24 * SC) + "px 'Fraunces',Georgia,serif";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 22;
-    ctx.fillText(CONFIG.BREAK_LINES[breakLine], W / 2, H * 0.33);
+    ctx.fillText(CONFIG.BREAK_LINES[breakLine], W / 2, H * 0.30);
     ctx.shadowBlur = 0;
   }
   ctx.restore();
-
   drawCracks();
 }
 
@@ -958,27 +1100,27 @@ function frame(now){
 function lose(){
   state = S.LOST;
   $('hud').classList.remove('on');
-  sfx.splat();
-  setTimeout(() => $('s-lost').classList.add('on'), 500);
+  sfx.hurt();
+  setTimeout(() => $('s-lost').classList.add('on'), 550);
 }
 $('retryBtn').onclick = () => {
   $('s-lost').classList.remove('on');
-  resetGame();
+  resetRun();
   state = S.PLAY;
   $('hud').classList.add('on');
 };
 function win(){
   state = S.WON;
   sfx.win(); buzz([14, 60, 14, 60, 120]);
-  junk = [];
-  burst(cake.x, cake.y, '255,226,170', 46, 1.9);
+  obstacles = []; pickups = [];
+  burst(runner.x, groundY - 60 * SC, '255,226,170', 44, 1.8);
   $('hud').classList.remove('on');
-  toast('every one of them.', 2400);
+  toast('all twenty-three.', 2400);
   setTimeout(() => {
     $('winTitle').textContent = CONFIG.WIN_TITLE;
     $('winBody').textContent  = CONFIG.WIN_BODY;
     $('s-win').classList.add('on');
-  }, 2200);
+  }, 3400);
 }
 
 /* ------------------------------------------------------- make a wish ---
@@ -992,7 +1134,7 @@ function blowOut(){
   $('wishHint').style.display = 'none';
   candles = 0;
   noise(0, 0.7, 0.16, 300);
-  burst(cake.x, cake.y - cake.w * 0.5, '255,226,170', 40, 1.5);
+  burst(luna.x || W * 0.6, poolFar + 30 * SC, '255,226,170', 40, 1.5);
   buzz([10, 40, 10]);
   $('reply').innerHTML = CONFIG.END_REPLY;
   $('reply').classList.add('on');
@@ -1034,7 +1176,7 @@ function listenForBlow(){
 
 /* ---------------------------------------------------------------- boot */
 resize();
-resetGame();
+resetRun();
 requestAnimationFrame(frame);
 document.addEventListener('visibilitychange', () => { last = performance.now(); });
 </script>
