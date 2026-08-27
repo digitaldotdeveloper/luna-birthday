@@ -935,12 +935,27 @@ function drawHills(){
   ctx.lineTo(-40, horizonY + 30); ctx.closePath(); ctx.fill();
 }
 /* layer 2 — the chalet and the pines she is staying in */
+/* How tall the building is has to come from the scene, not from how wide
+   the window happens to be: sizing it off W alone made it enormous on a
+   short landscape screen and buried its lower half under the waterline. */
+function chaletBox(){
+  const im = ART.chalet;
+  const h = (poolFar - horizonY) + H * 0.20;
+  const w = h * (im.naturalWidth / im.naturalHeight);
+  return { w, h, off: (scroll * 0.17) % w };
+}
+/* One place that lays the building out, so the reflection below the
+   surface is guaranteed to line up with the building above it. */
+function paintChalet(baseY){
+  const im = ART.chalet;
+  const { w, h, off } = chaletBox();
+  for (let i = -1; i <= 2; i++) ctx.drawImage(im, i * w - off, baseY - h, w, h);
+}
 function drawChalet(){
   if (!ART.chalet) return;
-  const w = W * 1.35, h = w * (ART.chalet.naturalHeight / ART.chalet.naturalWidth);
-  const off = (scroll * 0.17) % w;
-  for (let i = -1; i <= 1; i++)
-    ctx.drawImage(ART.chalet, i * w - off, poolFar - h * 0.86, w, h);
+  /* its feet rest exactly on the far lip of the pool. Nothing of it is
+     underneath the water plane any more, so nothing can be painted over. */
+  paintChalet(poolFar);
 
   /* the bank between the pines and the water reads as one black slab
      otherwise — lift it toward the water and spill the chalet's light */
@@ -991,18 +1006,61 @@ function drawPool(){
     poolG.addColorStop(0.45,'rgb(92,50,180)');
     poolG.addColorStop(1,   'rgb(126,74,224)');
   }
+  /* The body of the water. Everything after this composites ON TOP of
+     what is already in the band, rather than replacing it — that is what
+     makes it read as water instead of a painted slab. */
   ctx.fillStyle = poolG;
   ctx.fillRect(-10, poolFar, W + 20, deckFar - poolFar);
+
+  /* what the building is doing in the water: mirrored about the near lip,
+     squashed the way a real reflection is, and dim enough to sit under the
+     surface rather than on it */
+  if (ART.chalet){
+    const SQUASH = 0.52;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(-10, poolFar, W + 20, deckFar - poolFar); ctx.clip();
+    ctx.globalAlpha = 0.34;
+    ctx.translate(0, poolFar * (1 + SQUASH));
+    ctx.scale(1, -SQUASH);
+    paintChalet(poolFar);
+    ctx.restore();
+    /* the reflection fades out as the water gets nearer and deeper */
+    const fade = ctx.createLinearGradient(0, poolFar, 0, deckFar);
+    fade.addColorStop(0,   'rgba(40,20,92,0)');
+    fade.addColorStop(1,   'rgba(40,20,92,.55)');
+    ctx.fillStyle = fade;
+    ctx.fillRect(-10, poolFar, W + 20, deckFar - poolFar);
+  }
+
+  /* the surface itself, let through rather than laid over */
+  ctx.save();
+  ctx.globalAlpha = 0.62;
   const realWater = tiledBands(ART.water, poolFar, deckFar, 12, 0.07, 0.30, 0.62, 0.76);
+  ctx.restore();
   if (realWater){
     const tint = ctx.createLinearGradient(0, poolFar, 0, deckFar);
-    tint.addColorStop(0,   'rgba(30,14,74,.74)');
-    tint.addColorStop(0.5, 'rgba(48,24,112,.52)');
-    tint.addColorStop(1,   'rgba(74,40,150,.38)');
+    tint.addColorStop(0,   'rgba(30,14,74,.42)');
+    tint.addColorStop(0.5, 'rgba(48,24,112,.30)');
+    tint.addColorStop(1,   'rgba(74,40,150,.22)');
     ctx.fillStyle = tint;
     ctx.fillRect(-10, poolFar, W + 20, deckFar - poolFar);
   }
-  ctx.fillStyle = 'rgba(214,190,255,.22)';
+  /* and the highlights that say there is a surface there at all */
+  ctx.save();
+  ctx.beginPath(); ctx.rect(-10, poolFar, W + 20, deckFar - poolFar); ctx.clip();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const l of lights){
+    if (l.sx == null || l.sx < -50 || l.sx > W + 50) continue;
+    const yy = poolFar + (deckFar - poolFar) * 0.30;
+    const g = ctx.createRadialGradient(l.sx, yy, 0, l.sx, yy, 34 * SC);
+    g.addColorStop(0, 'rgba(255,216,150,.16)');
+    g.addColorStop(1, 'rgba(255,216,150,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(l.sx, yy, 34 * SC, 11 * SC, 0, 0, 6.2832); ctx.fill();
+  }
+  ctx.restore();
+
+  ctx.fillStyle = 'rgba(214,190,255,.30)';
   ctx.fillRect(-10, poolFar, W + 20, 2 * SC);
   ctx.save();
   ctx.beginPath(); ctx.rect(-10, poolFar, W + 20, deckFar - poolFar); ctx.clip();
