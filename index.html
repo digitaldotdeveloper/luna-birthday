@@ -829,14 +829,15 @@ const CONFIG = {
                 "Unfortunately, I'd already decided you were getting a present."],
 
   DOORS: [
-    { lb:"NORMAL", tg:"the sensible one", res:"Boring.",
-      det:"He walks through. Nothing happens. Nothing at all." },
-    { lb:"STUPID", tg:"probably fine", res:"Much better.",
-      det:"He goes in headfirst and comes back out wearing the cake." },
-    { lb:"DEFINITELY A BAD IDEA", tg:"do not", res:"🚨 LUNA HAS MADE A TERRIBLE DECISION",
+    { lb:"NORMAL", tg:"the sensible one", res:"Wrong.",
+      det:"You\u2019re not normal." },
+    { lb:"STUPID", tg:"probably fine", res:"No comment.",
+      det:"" },
+    { lb:"ADVENTURE", tg:"go on then", res:"Yh that\u2019s your thing.",
       det:"There is no floor behind this one.", dive:true }
   ],
-  DOORS_AFTER: "Right. That's enough of that.",
+  /* she has to try the other two before the last one will open */
+  DOORS_WAIT: "That one last. Try the others first.",
 
   /* ---------------------- what is behind the third door --------------
      She loves this sort of thing, so the game becomes it for a minute. */
@@ -2513,7 +2514,7 @@ function paintQuiz(){
 function openDoors(){
   const row = $('doorRow');
   row.innerHTML = '';
-  let opened = 0;
+  const opened = new Set();
   CONFIG.DOORS.forEach((d, n) => {
     const b = document.createElement('button');
     b.className = 'door';
@@ -2521,28 +2522,19 @@ function openDoors(){
                   `<span class="lb">${d.lb}</span><span class="tg">${d.tg}</span>`;
     b.onclick = () => {
       if (b.classList.contains('used')) return;
-      b.classList.add('used');
-      opened++;
-      if (n === 2){ sfx.alarm(); shake = 18; buzz([40,60,40,60,120]); }
-      else { sfx.clunk(); buzz(14); }
-      note('doorNote', `<b>${d.res}</b><br>${d.det}`);
-      if (d.dive){
-        /* the floor gives way and the whole game changes */
-        setTimeout(() => { layer.hide('l-doors'); startDive(); }, 1700);
+      /* the last one drops her through the floor, so it waits until she
+         has opened the two that do not */
+      if (d.dive && opened.size < CONFIG.DOORS.length - 1){
+        sfx.bad(); buzz(30);
+        note('doorNote', CONFIG.DOORS_WAIT);
         return;
       }
-      if (opened === 1){
-        /* one is enough — the rest are there for anyone curious */
-        setTimeout(() => {
-          note('doorNote', $('doorNote').innerHTML +
-            '<br><span style="color:#c9a4ff">try the others, or wait</span>');
-        }, 2400);
-        setTimeout(() => {
-          if (state !== S.QUEST) return;
-          layer.hide('l-doors');
-          setTimeout(() => { toast(CONFIG.DOORS_AFTER, 2200); finishQuest('surprise', true); }, 600);
-        }, 6500);
-      }
+      b.classList.add('used');
+      opened.add(n);
+      if (d.dive){ sfx.alarm(); shake = 18; buzz([40,60,40,60,120]); }
+      else { sfx.clunk(); buzz(14); }
+      note('doorNote', `<b>${d.res}</b>` + (d.det ? `<br>${d.det}` : ''));
+      if (d.dive) setTimeout(() => { layer.hide('l-doors'); startDive(); }, 1900);
     };
     row.appendChild(b);
   });
