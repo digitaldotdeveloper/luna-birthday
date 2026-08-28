@@ -852,18 +852,11 @@ const CONFIG = {
   },
 
   /* the last thing it says, one line at a time */
-  FINAL_LINES: [
-    "And now…",
-    "One last thing.",
-    "Feliz cumpleaños, Luna. 💜",
-    "I could've just sent you a message.",
-    "But where's the fun in that?",
-    "I hope 23 gives you a lot of reasons to smile.",
-    "Enjoy your day."
-  ],
+  /* it has said everything already. Put a line here only if it earns it. */
+  FINAL_LINES: [],
   SIGNED: "— Firass",
   /* set to false and this line never appears */
-  FLIRTY_ON: true,
+  FLIRTY_ON: false,
   FLIRTY_LINE: "Maybe I'll get to be part of the year too. 💜",
 
   /* ---- how loud the song sits under the game ---- */
@@ -1111,6 +1104,10 @@ let stars = [], lights = [], hills = [], props = [], boards = [];
 let obstacles = [], pickups = [], parts = [], floats = [], cracks = [];
 let candles = 0, frosting = 3, shake = 0, t = 0, lineIdx = 0;
 let scroll = 0, speed = 0, nextSpawn = 0, breakLine = -1, glow = 0;
+/* nothing is thrown at her until she has worked out that a tap is a jump */
+let warm = 0, taught = false, hintA = 0;
+const WARM_AFTER = 1.5, WARM_CAP = 12;
+let learning = false;                  /* the opening stretch of the run */
 let colour = 0, unlocking = false;     /* 0 = drained, 1 = her colour, everywhere */
 let dark = 1;                          /* and until then there is nothing to see */
 let inRoom = false;                    /* the building behind swaps at the end */
@@ -1162,6 +1159,7 @@ function resetRun(keep){
   combo = 0; slow = 0; land = 0; comboIdx = 0; hitIdx = 0; runner.pose = -1;
   flash = 0;
   scroll = 0; speed = 300 * SC; nextSpawn = W * 0.9;
+  warm = 0; taught = false; hintA = 0;
   runner.y = groundY; runner.vy = 0; runner.ground = true; runner.ft = 0; runner.hurt = 0;
   paintHUD();
 }
@@ -1395,6 +1393,7 @@ function jump(){
   runner.vy = JUMP_V * SC;
   runner.ground = false;
   runner.held = true;
+  taught = true;                 // that is the lesson over
   sfx.jump(); buzz(9);
 }
 cv.addEventListener('pointerdown', e => { ac(); jump(); });
@@ -1467,7 +1466,13 @@ function update(dt){
   }
   updateSparks(dt);
   if (state === S.PLAY){
-    const prog = candles / CONFIG.GOAL;
+    /* the opening stretch: she runs, nothing comes, and the speed does not
+       climb — it ends a beat after her first jump, or on its own. */
+    warm += dt;
+    learning = !(taught && warm > WARM_AFTER) && warm < WARM_CAP;
+    hintA += ((learning ? 1 : 0) - hintA) * Math.min(1, dt * 3.2);
+    if (learning) nextSpawn = scroll + W * 0.9;      // and the first one is not right there
+    const prog = learning ? 0 : candles / CONFIG.GOAL;
     speed += ((300 + prog * 300) * SC - speed) * Math.min(1, dt * 0.7);
   }
   if (state === S.PLAY || state === S.WON) scroll += speed * dt;
@@ -1487,7 +1492,7 @@ function update(dt){
   if (runner.hurt > 0) runner.hurt -= dt;
   if (land > 0) land -= dt;
 
-  if (state === S.PLAY && scroll + W > nextSpawn) spawnAhead();
+  if (state === S.PLAY && !learning && scroll + W > nextSpawn) spawnAhead();
 
   /* what he is running into */
   for (const o of obstacles){
@@ -2266,6 +2271,7 @@ function draw(){
     ctx.fillStyle = 'rgba(6,4,12,' + (0.42 * k) + ')';
     ctx.fillRect(0, 0, W, H);
   }
+  if (state === S.PLAY && hintA > 0.01) drawTapHint();
   if (flash > 0.01){
     ctx.fillStyle = 'rgba(255,255,255,' + (0.5 * flash) + ')';
     ctx.fillRect(0, 0, W, H);
@@ -2865,6 +2871,39 @@ function wrapped(text, cx, cy, maxW, lh){
   if (line) lines.push(line);
   const top = cy - (lines.length - 1) * lh / 2;
   lines.forEach((l, i) => ctx.fillText(l, cx, top + i * lh));
+}
+
+/* a thumb tapping the glass, so she does not have to be told twice */
+function drawTapHint(){
+  const x = W / 2, y = H * 0.80, a = hintA;
+  const beat = (t * 1.6) % 1;                 // one tap a second and a bit
+  ctx.save();
+  ctx.globalAlpha = a;
+
+  ctx.strokeStyle = 'rgba(226,214,255,.85)';
+  ctx.lineWidth = 2 * SC;
+  for (let i = 0; i < 2; i++){
+    const k = (beat + i * 0.5) % 1;
+    ctx.globalAlpha = a * (1 - k) * 0.55;
+    ctx.beginPath();
+    ctx.arc(x, y, (14 + k * 34) * SC, 0, 6.2832);
+    ctx.stroke();
+  }
+
+  const press = Math.max(0, 1 - Math.abs(beat - 0.12) * 7);   // it dips on the tap
+  ctx.globalAlpha = a;
+  ctx.fillStyle = 'rgba(243,236,255,.92)';
+  ctx.beginPath();
+  ctx.arc(x, y - 4 * SC + press * 5 * SC, 13 * SC, 0, 6.2832);
+  ctx.fill();
+
+  ctx.globalAlpha = a * 0.95;
+  ctx.fillStyle = '#f3ecff';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = "800 " + Math.round(15 * SC) + "px 'Nunito',sans-serif";
+  ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 16;
+  ctx.fillText('tap anywhere to jump', x, y - 46 * SC);
+  ctx.restore();
 }
 
 function mixc(a, b, k){
