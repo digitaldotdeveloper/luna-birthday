@@ -759,7 +759,7 @@ const CONFIG = {
     jump: "tap anywhere to jump",
     warn: "and stay off the milkshakes",
     hit:  "…that is what they do.",
-    give: "here. take one of mine.",
+    give: "that\u2019s from me.",
     back: "three again. mind the milkshakes."
   },
 
@@ -1120,9 +1120,9 @@ let scroll = 0, speed = 0, nextSpawn = 0, breakLine = -1, glow = 0;
 /* nothing is thrown at her until she has worked out that a tap is a jump */
 let warm = 0, taught = false, hintA = 0;
 /* the lesson runs in four beats: the warning, the milkshake that lands,
-   him walking in with a life, and then the game proper */
+   the heart that drops to her, and then the game proper */
 let tut = 0, tutT = 0;
-const him = { on:false, x:0, dir:-1, ft:0, gave:false, done:false, hearts:[] };
+const gift = { on:false, t:0, done:false };
 let learning = false;                  /* the opening stretch of the run */
 let colour = 0, unlocking = false;     /* 0 = drained, 1 = her colour, everywhere */
 let dark = 1;                          /* and until then there is nothing to see */
@@ -1177,7 +1177,7 @@ function resetRun(keep){
   scroll = 0; speed = 300 * SC; nextSpawn = W * 0.9;
   warm = 0; taught = false; hintA = 0;
   tut = 0; tutT = 0;
-  him.on = false; him.gave = false; him.done = false; him.hearts = [];
+  gift.on = false; gift.t = 0; gift.done = false;
   runner.y = groundY; runner.vy = 0; runner.ground = true; runner.ft = 0; runner.hurt = 0;
   paintHUD();
 }
@@ -1433,32 +1433,19 @@ function teach(dt){
     return;
   }
   if (tut !== 2) return;
-  him.ft += dt * 9;
-  const stop = runner.x + 170 * SC;
-  if (!him.gave){
-    him.x += (stop - him.x) * Math.min(1, dt * 2.4);
-    if (Math.abs(him.x - stop) < 7 * SC){
-      him.gave = true; tutT = 0;
-      him.hearts.push({ t: 0 });
-      toast(CONFIG.TUTORIAL.give, 1800);
-      sfx.good();
-    }
-    return;
-  }
-  for (const q of him.hearts) q.t += dt;
-  if (!him.done && him.hearts[0] && him.hearts[0].t > 0.85){
-    him.done = true;
+
+  /* it comes down to her on its own, and he says where it came from */
+  gift.t += dt;
+  if (!gift.done && gift.t > GIFT_FALL){
+    gift.done = true;
     frosting = 3; paintHUD();
     sfx.key(); buzz([12, 50, 12]);
-    toast(CONFIG.TUTORIAL.back, 2400);
+    burst(runner.x, groundY - 96 * SC, '255,90,130', 22, 1.1);
+    toast(CONFIG.TUTORIAL.give, 2200);
   }
-  if (tutT > 3.6){                       // and then he goes, at a run
-    him.dir = 1;
-    him.ft += dt * 9;                    // twice the legs, he is not strolling
-    him.x += 700 * SC * dt;
-    if (him.x > W + 150 * SC){ tut = 3; him.on = false; }
-  }
+  if (gift.t > GIFT_FALL + 2.2){ tut = 3; gift.on = false; }
 }
+const GIFT_FALL = 1.15;               // how long it takes to reach her
 
 function spawnAhead(){
   const prog = candles / CONFIG.GOAL;
@@ -1579,8 +1566,7 @@ function update(dt){
       paintHUD();
       toast(CONFIG.TUTORIAL.hit, 1600);
       tut = 2; tutT = 0;
-      him.on = true; him.x = W + 130 * SC; him.dir = -1;
-      him.gave = false; him.done = false; him.hearts = [];
+      gift.on = true; gift.t = 0; gift.done = false;
       continue;
     }
     if (runner.hurt > 0) continue;
@@ -2310,7 +2296,7 @@ function draw(){
   drawProps();
   drawEnding();
   drawFirass();
-  drawTutorHim();
+  drawGift();
 
   for (const p of pickups)   drawPickup(p);
   for (const o of obstacles) drawObstacle(o);
@@ -2966,48 +2952,31 @@ function heartPath(cx, cy, r){
   ctx.closePath();
 }
 
-/* him, on his own legs, walking in to hand her a life back */
-function drawTutorHim(){
-  if (!him.on) return;
-  const y = groundY, h = 205 * SC;
-  ctx.fillStyle = 'rgba(10,4,22,.22)';
-  ctx.beginPath(); ctx.ellipse(him.x, y + 3 * SC, 30 * SC, 6 * SC, 0, 0, 6.2832); ctx.fill();
+/* the heart she is given, on its way down */
+function drawGift(){
+  if (!gift.on) return;
+  const k = Math.min(1, gift.t / GIFT_FALL);
+  const ease = k * k;                        // it falls, it does not drift
+  const x = runner.x;
+  const y = -40 * SC + (groundY - 96 * SC + 40 * SC) * ease;
+  const r = (15 + k * 6) * SC;
+  const fade = gift.t < GIFT_FALL ? 1 : Math.max(0, 1 - (gift.t - GIFT_FALL) * 1.6);
+  if (fade <= 0) return;
   ctx.save();
-  if (ART.himwalk){
-    /* five cells, but the fifth is a jump — he walks on the first four */
-    const cells = 5, cw = ART.himwalk.naturalWidth / cells, ch = ART.himwalk.naturalHeight;
-    const w = h * (cw / ch);
-    ctx.translate(him.x, 0);
-    if (him.dir < 0) ctx.scale(-1, 1);
-    ctx.drawImage(ART.himwalk, Math.floor(him.ft) % 4 * cw, 0, cw, ch,
-                  -w / 2, y - h, w, h);
-  } else if (ART.himstand){
-    const w = h * (ART.himstand.naturalWidth / ART.himstand.naturalHeight);
-    ctx.drawImage(ART.himstand, him.x - w / 2, y - h, w, h);
-  }
+  ctx.globalAlpha = fade;
+  const g = ctx.createRadialGradient(x, y, 2, x, y, r * 2.8);
+  g.addColorStop(0, 'rgba(255,70,110,.5)');
+  g.addColorStop(1, 'rgba(255,70,110,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, r * 2.8, 0, 6.2832); ctx.fill();
+  ctx.fillStyle = '#ff3355';
+  heartPath(x, y, r);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.45)';
+  ctx.beginPath();
+  ctx.ellipse(x - r * 0.34, y - r * 0.38, r * 0.2, r * 0.13, -0.5, 0, 6.2832);
+  ctx.fill();
   ctx.restore();
-  /* the heart, on its way over to her */
-  for (const q of him.hearts){
-    const k = Math.min(1, q.t / 0.85);
-    const hx = him.x + (runner.x - him.x) * k;
-    const hy = y - (118 + Math.sin(k * 3.14159) * 76) * SC;
-    ctx.save();
-    ctx.globalAlpha = q.t < 0.85 ? 1 : Math.max(0, 1 - (q.t - 0.85) * 2.2);
-    const r = (13 + k * 7) * SC;
-    const g2 = ctx.createRadialGradient(hx, hy, 2, hx, hy, r * 2.6);
-    g2.addColorStop(0, 'rgba(255,70,110,.55)');
-    g2.addColorStop(1, 'rgba(255,70,110,0)');
-    ctx.fillStyle = g2;
-    ctx.beginPath(); ctx.arc(hx, hy, r * 2.6, 0, 6.2832); ctx.fill();
-    ctx.fillStyle = '#ff3355';
-    heartPath(hx, hy, r);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,.45)';
-    ctx.beginPath();
-    ctx.ellipse(hx - r * 0.34, hy - r * 0.38, r * 0.2, r * 0.13, -0.5, 0, 6.2832);
-    ctx.fill();
-    ctx.restore();
-  }
 }
 
 /* a thumb tapping the glass, so she does not have to be told twice */
