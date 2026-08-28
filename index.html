@@ -550,7 +550,7 @@ const CONFIG = {
   },
 
   /* ---- the lines he says when he kicks the card in ---- */
-  BREAK_LINES: [ "…yeah, no.", "not for you." ],
+  BREAK_LINES: [ "Lol you really thought id make something lame?" ],
 
   /* ---- the way in. Get it right and the whole place comes on. ---- */
   ASK_TITLE:  "prove it's you.",
@@ -646,7 +646,7 @@ const CONFIG = {
      She loves this sort of thing, so the game becomes it for a minute. */
   DIVE: {
     intro:   ["no floor.", "…okay then."],
-    hint:    "hold a side to steer",
+    hint:    "hold your finger down and slide",
     pull:    "PULL",
     pulled:  "¡Buen viaje!",
     after:   "You didn't hesitate. Not even slightly.",
@@ -899,7 +899,7 @@ let lit = 0;                           /* candles alight in the last scene */
 
 /* ---------------------------------------------------------- the fall */
 const dive = {
-  on:false, t:0, x:0, vx:0, roll:0, chute:0, pulled:false, steer:0,
+  on:false, t:0, x:0, tx:0, vx:0, roll:0, chute:0, pulled:false,
   hazards:[], streaks:[], fields:[], stars:null, next:0, hit:0, done:false,
   vpx:0, vpy:0, hair:0
 };
@@ -1004,8 +1004,7 @@ function breakIt(){
   setTimeout(() => { sfx.shatter(); shake = 20; }, 300);
   setTimeout(() => { $('card').classList.add('gone'); sfx.thud(); shake = 26; buzz(120); }, 520);
   setTimeout(() => { $('card').style.display = 'none'; breakLine = 0; cracks = []; }, 950);
-  setTimeout(() => { breakLine = 1; }, 2050);
-  setTimeout(askColour, 3100);
+  setTimeout(askColour, 4300);          // it is a longer line than it was
 }
 
 /* ================================================================= the gate
@@ -1932,7 +1931,7 @@ function draw(){
     ctx.font = "italic 600 " + Math.round(24 * SC) + "px 'Fraunces',Georgia,serif";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 22;
-    ctx.fillText(CONFIG.BREAK_LINES[breakLine], W / 2, H * 0.30);
+    wrapped(CONFIG.BREAK_LINES[breakLine], W / 2, H * 0.30, W * 0.84, 32 * SC);
     ctx.shadowBlur = 0;
   }
   ctx.restore();
@@ -2232,9 +2231,9 @@ function openDoors(){
 function startDive(){
   state = S.DIVE;
   dive.on = true; dive.t = 0; dive.chute = 0; dive.pulled = false; dive.done = false;
-  dive.x = W / 2; dive.vx = 0; dive.roll = 0; dive.hit = 0; dive.steer = 0;
+  dive.x = dive.tx = W / 2; dive.vx = 0; dive.roll = 0; dive.hit = 0;
   dive.hazards = []; dive.streaks = []; dive.fields = []; dive.next = 0.9;
-  dive.hair = 0; held.clear(); keyHeld.clear();
+  dive.hair = 0; drag = null; keyHeld.clear();
   seedSky();
   sfx.whoosh(); buzz([20, 60, 20]);
   toast(CONFIG.DIVE.intro[0], 1300);
@@ -2245,46 +2244,37 @@ function startDive(){
 }
 
 /* -------------------------------------------------------------- steering
-   A thumb held on the left half pushes her left, the right half right,
-   and letting go lets the air straighten her out. Holding both sides at
-   once cancels — she just falls. The ripcord is a button of its own,
-   because the whole screen is now a control.                           */
-const held = new Map();                 // pointerId -> -1 | 1
+   Put a finger down anywhere and slide it: she goes where you drag her,
+   and she stays put when you stop. Lift off and she just falls. The
+   ripcord is a button of its own, because the screen is a control.     */
+const DRAG_GAIN = 1.35;
+let drag = null;                        // { id, lastX }
 const keyHeld = new Set();
-function recalcSteer(){
-  let d = 0;
-  for (const v of held.values()) d += v;
-  if (keyHeld.has('L')) d -= 1;
-  if (keyHeld.has('R')) d += 1;
-  dive.steer = Math.max(-1, Math.min(1, d));
-}
-function sideOf(x){ return x < W / 2 ? -1 : 1; }
 cv.addEventListener('pointerdown', e => {
   if (state !== S.DIVE) return;
-  /* no pointer capture here: it would retarget every later event at the
-     canvas and swallow the tap on PULL. window catches the release. */
-  held.set(e.pointerId, sideOf(e.clientX));
-  recalcSteer();
+  drag = { id: e.pointerId, lastX: e.clientX };
 }, { passive:true });
 cv.addEventListener('pointermove', e => {
-  if (state !== S.DIVE || !held.has(e.pointerId)) return;
-  held.set(e.pointerId, sideOf(e.clientX));      // slide across the middle to flip
-  recalcSteer();
+  if (state !== S.DIVE || !drag || drag.id !== e.pointerId) return;
+  diveBy((e.clientX - drag.lastX) * DRAG_GAIN);
+  drag.lastX = e.clientX;
 }, { passive:true });
-function letGo(e){ if (held.delete(e.pointerId)) recalcSteer(); }
+function letGo(e){ if (drag && drag.id === e.pointerId) drag = null; }
 window.addEventListener('pointerup', letGo, { passive:true });
 window.addEventListener('pointercancel', letGo, { passive:true });
+function diveBy(dx){
+  const edge = 104 * SC;          // her arm span, not her hips
+  dive.tx = Math.max(edge, Math.min(W - edge, dive.tx + dx));
+}
 window.addEventListener('keydown', e => {
   if (state !== S.DIVE) return;
   if (e.code === 'ArrowLeft'  || e.code === 'KeyA') keyHeld.add('L');
   if (e.code === 'ArrowRight' || e.code === 'KeyD') keyHeld.add('R');
   if (e.code === 'Enter' && dive.t / CONFIG.DIVE.seconds >= CONFIG.DIVE.pullAt) pullChute();
-  recalcSteer();
 });
 window.addEventListener('keyup', e => {
   if (e.code === 'ArrowLeft'  || e.code === 'KeyA') keyHeld.delete('L');
   if (e.code === 'ArrowRight' || e.code === 'KeyD') keyHeld.delete('R');
-  recalcSteer();
 });
 $('divePull').addEventListener('click', () => { ac(); pullChute(); });
 
@@ -2325,22 +2315,22 @@ function proj(ox, oy, z){
   return [dive.vpx + ox * sc, dive.vpy + oy * sc, sc];
 }
 
-const ACC = 1600, MAXV = 640, DRAG = 3.4;
+const MAXV = 640, KEY_V = 620;
 function updateDive(dt){
   const D = CONFIG.DIVE;
   dive.t += dt;
   const k = Math.min(1, dive.t / D.seconds);
   dive.hair += dt;
 
-  /* she leans into the hold, and the air pushes back when she lets go */
-  dive.vx += dive.steer * ACC * SC * dt;
-  dive.vx -= dive.vx * DRAG * (dive.steer ? 0.3 : 1) * dt;
-  dive.vx = Math.max(-MAXV * SC, Math.min(MAXV * SC, dive.vx));
-  dive.x += dive.vx * dt;
-  const edge = 88 * SC;
-  if (dive.x < edge){ dive.x = edge; dive.vx *= -0.25; }
-  if (dive.x > W - edge){ dive.x = W - edge; dive.vx *= -0.25; }
-  dive.roll += ((dive.vx / (MAXV * SC)) * 0.30 - dive.roll) * Math.min(1, dt * 7);
+  /* the keys push the same target the finger drags */
+  if (keyHeld.size) diveBy((keyHeld.has('R') - keyHeld.has('L')) * KEY_V * SC * dt);
+
+  /* she does not snap to the finger, she swings under it */
+  const nx = dive.x + (dive.tx - dive.x) * Math.min(1, dt * 9);
+  const v  = (nx - dive.x) / Math.max(dt, 0.0001);
+  dive.x = nx;
+  dive.vx += (v - dive.vx) * Math.min(1, dt * 10);
+  dive.roll += ((dive.vx / (MAXV * SC)) * 0.34 - dive.roll) * Math.min(1, dt * 7);
   if (dive.hit > 0) dive.hit -= dt;
 
   /* the camera hangs behind her, so the world slides the other way */
@@ -2525,12 +2515,13 @@ function drawSteerHint(){
   const y = H * 0.74;
   ctx.strokeStyle = '#fff';
   ctx.lineWidth = 3 * SC; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const lean = Math.max(-1, Math.min(1, dive.vx / (MAXV * SC * 0.55)));
   for (const dir of [-1, 1]){
-    const on = dive.steer === dir;
+    const on = lean * dir > 0.08 ? Math.min(1, Math.abs(lean)) : 0;
     const x = dir < 0 ? 40 * SC : W - 40 * SC;
-    ctx.globalAlpha = on ? 0.85 : 0.20;
+    ctx.globalAlpha = 0.18 + on * 0.7;
     for (let i = 0; i < 2; i++){
-      const o = (i * 13 + (on ? 3 : 0)) * SC * dir;   // and they nudge over when held
+      const o = (i * 13 + on * 4) * SC * dir;         // and they slide with her
       ctx.beginPath();
       ctx.moveTo(x - 8 * SC * dir + o, y - 13 * SC);
       ctx.lineTo(x + 8 * SC * dir + o, y);
@@ -2541,6 +2532,21 @@ function drawSteerHint(){
   ctx.globalAlpha = 1;
   ctx.lineCap = 'butt';
 }
+/* centred text that breaks itself over as many lines as it needs */
+function wrapped(text, cx, cy, maxW, lh){
+  const words = text.split(' ');
+  const lines = [];
+  let line = '';
+  for (const w of words){
+    const t = line ? line + ' ' + w : w;
+    if (line && ctx.measureText(t).width > maxW){ lines.push(line); line = w; }
+    else line = t;
+  }
+  if (line) lines.push(line);
+  const top = cy - (lines.length - 1) * lh / 2;
+  lines.forEach((l, i) => ctx.fillText(l, cx, top + i * lh));
+}
+
 function mixc(a, b, k){
   return 'rgb(' + Math.round(a[0]+(b[0]-a[0])*k) + ',' +
                   Math.round(a[1]+(b[1]-a[1])*k) + ',' +
