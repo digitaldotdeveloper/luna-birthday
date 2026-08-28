@@ -36,9 +36,11 @@
   html,body{
     margin:0; padding:0; height:100%; width:100%;
     overflow:hidden; overscroll-behavior:none; background:#12071f;
-    user-select:none; -webkit-user-select:none; touch-action:manipulation;
+    user-select:none; -webkit-user-select:none; touch-action:none;
+    -webkit-touch-callout:none;
   }
-  canvas{ display:block; position:fixed; inset:0; width:100%; height:100%; }
+  canvas{ display:block; position:fixed; inset:0; width:100%; height:100%;
+          touch-action:none; }
   /* the cracks are drawn over the top of the e-card, so they get their own
      layer above it. z-index 41 sits between the card (40) and the mute (45). */
   #crack{ z-index:41; pointer-events:none; background:transparent; }
@@ -544,7 +546,6 @@ const CONFIG = {
     firebowl: "assets/firebowl.webp",
     champagne:"assets/champagne.webp",
     gifts:    "assets/gifts.webp",
-    ladder:   "assets/ladder.webp",
     floaties: "assets/floaties.webp", // drifting in the pool
     planter:  "assets/palm.webp"      // the foreground, closest to the lens
   },
@@ -710,7 +711,22 @@ function resize(){
   runner.x = W * 0.27;
   if (runner.ground) runner.y = groundY;
 }
-window.addEventListener('resize', resize);
+let reflow = 0;
+window.addEventListener('resize', () => {
+  cancelAnimationFrame(reflow);
+  reflow = requestAnimationFrame(() => {
+    /* the address bar sliding away is not a resize worth rebuilding for */
+    if (window.innerWidth === W && Math.abs(window.innerHeight - H) < 90){
+      H = window.innerHeight;
+      cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      kv.width = cv.width; kv.height = cv.height;
+      kx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      return;
+    }
+    resize();
+  });
+});
 window.addEventListener('orientationchange', () => setTimeout(resize, 250));
 
 /* ---------------------------------------------------------------- audio */
@@ -824,8 +840,16 @@ function buzz(p){ if (navigator.vibrate) try { navigator.vibrate(p); } catch(e){
    fetching, and the real play() happens inside the tap that picks purple. */
 const bgm = $('bgm');
 let bgmFade = null;
+/* iOS 16.4+ : without this the ring/silent switch mutes the whole card.
+   Everywhere else it is not there and nothing happens. */
+function audioSession(){
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch(e){}
+}
+audioSession();
 function primeMusic(){
   if (!bgm) return;
+  audioSession();
+  bgm.muted = false;
   bgm.preload = 'auto';
   bgm.volume = 0;
   try { bgm.load(); } catch(e){}
@@ -2247,7 +2271,7 @@ function startDive(){
    Put a finger down anywhere and slide it: she goes where you drag her,
    and she stays put when you stop. Lift off and she just falls. The
    ripcord is a button of its own, because the screen is a control.     */
-const DRAG_GAIN = 1.35;
+const DRAG_GAIN = 2.2;                  // a thumb's width crosses a lot of sky
 let drag = null;                        // { id, lastX }
 const keyHeld = new Set();
 cv.addEventListener('pointerdown', e => {
@@ -2326,7 +2350,7 @@ function updateDive(dt){
   if (keyHeld.size) diveBy((keyHeld.has('R') - keyHeld.has('L')) * KEY_V * SC * dt);
 
   /* she does not snap to the finger, she swings under it */
-  const nx = dive.x + (dive.tx - dive.x) * Math.min(1, dt * 9);
+  const nx = dive.x + (dive.tx - dive.x) * Math.min(1, dt * 15);
   const v  = (nx - dive.x) / Math.max(dt, 0.0001);
   dive.x = nx;
   dive.vx += (v - dive.vx) * Math.min(1, dt * 10);
@@ -2720,10 +2744,14 @@ resetRun();
 requestAnimationFrame(frame);
 document.addEventListener('visibilitychange', () => {
   last = performance.now();
-  if (!bgm) return;
-  if (document.hidden) bgm.pause();
-  else if (!muted && state >= S.PLAY) bgm.play().catch(() => {});
+  if (document.hidden){ if (bgm) bgm.pause(); return; }
+  ac();                                     // Android suspends it in the background
+  if (bgm && !muted && state >= S.PLAY) bgm.play().catch(() => {});
 });
+window.addEventListener('pointerdown', () => {
+  ac();
+  if (bgm && !muted && state >= S.PLAY && bgm.paused) bgm.play().catch(() => {});
+}, { passive:true });
 </script>
 </body>
 </html>
