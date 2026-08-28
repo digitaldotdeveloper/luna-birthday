@@ -733,7 +733,8 @@ const CONFIG = {
   ],
 
   /* ---- the lines he says when he kicks the card in ---- */
-  BREAK_LINES: [ "Lol you really thought id make something lame?" ],
+  BREAK_LINES: [ "3am bet5eyal shaklik hala2 😂",
+                 "3njd fakarte hayde hiye?" ],
 
   /* ---- the way in. Get it right and the whole place comes on. ---- */
   ASK_TITLE:  "prove it's you.",
@@ -787,12 +788,12 @@ const CONFIG = {
 
   /* Three of these are ours. She needs all three before it develops. */
   OBJECTS: [
-    { i:0, key:true, line:"The purple one. You had it on all night." },
-    { i:1, key:true, line:"You took about forty of these. I'm in two of them." },
-    { i:2,           line:"\"Five minutes away.\" You were not five minutes away." },
-    { i:3, key:true, line:"Somebody named you after this. Good call." },
+    { i:0,           line:"The purple one. You had it on all night." },
+    { i:1, key:true, line:"This one. I go back to it more than I admit." },
+    { i:2, key:true, line:"The fries era. You did your time." },
+    { i:3,           line:"Somebody named you after this. Good call." },
     { i:4,           line:"Indoors. At night. Iconic." },
-    { i:5,           line:"You said you weren't hungry." }
+    { i:5, key:true, line:"And then this. Look where you got to." }
   ],
   HUNT_SUB:    "Three of these are ours. Find them.",
   HUNT_PIECE:  ["one.", "two.", "…there it is."],
@@ -1108,6 +1109,7 @@ let obstacles = [], pickups = [], parts = [], floats = [], cracks = [];
 let candles = 0, frosting = 3, shake = 0, t = 0, lineIdx = 0;
 let scroll = 0, speed = 0, nextSpawn = 0, breakLine = -1, glow = 0;
 let colour = 0, unlocking = false;     /* 0 = drained, 1 = her colour, everywhere */
+let dark = 1;                          /* and until then there is nothing to see */
 let inRoom = false;                    /* the building behind swaps at the end */
 let fireworksOn = false;
 const sparks = [];
@@ -1299,7 +1301,8 @@ function breakIt(){
     $('dialogs').innerHTML = '';
     breakLine = 0; cracks = [];
   }, 1150);
-  setTimeout(askColour, 4300);          // it is a longer line than it was
+  setTimeout(() => { breakLine = 1; }, 2700);
+  setTimeout(askColour, 5200);          // two lines to read, in the dark
 }
 
 /* ================================================================= the gate
@@ -1435,7 +1438,10 @@ function update(dt){
   t += dt;
   shake *= Math.pow(0.0016, dt);
   glow += ((state >= S.WON ? 1 : 0) - glow) * Math.min(1, dt * 1.2);
-  if (unlocking) colour = Math.min(1, colour + dt * 1.15);
+  if (unlocking){
+    colour = Math.min(1, colour + dt * 1.15);
+    dark   = Math.max(0, dark - dt * 1.25);      // the place arrives with it
+  }
   luna.bob += dt;
   if (state >= S.BREAK) runner.in += (1 - runner.in) * Math.min(1, dt * 2.4);
   /* he stands there, arms folded, for as long as he is the one talking */
@@ -2235,14 +2241,13 @@ function draw(){
   }
   ctx.globalAlpha = 1;
 
-  if (state === S.BREAK && breakLine >= 0){
-    ctx.fillStyle = '#f3ecff';
-    ctx.font = "italic 600 " + Math.round(24 * SC) + "px 'Fraunces',Georgia,serif";
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 22;
-    wrapped(CONFIG.BREAK_LINES[breakLine], W / 2, H * 0.30, W * 0.84, 32 * SC);
-    ctx.shadowBlur = 0;
+  /* black over the top of everything, so the first thing she ever sees of
+     the place is the moment she picks purple. The lines below sit on it. */
+  if (dark > 0.001){
+    ctx.fillStyle = 'rgba(4,2,9,' + dark + ')';
+    ctx.fillRect(-80, -80, W + 160, H + 160);    // wide enough to survive shake
   }
+
   ctx.restore();
 
   /* Everything above is painted in full colour and then drained, so the
@@ -2261,6 +2266,18 @@ function draw(){
   if (flash > 0.01){
     ctx.fillStyle = 'rgba(255,255,255,' + (0.5 * flash) + ')';
     ctx.fillRect(0, 0, W, H);
+  }
+
+  /* his lines go on last of all — painted before the drain they came out
+     grey, and the emoji came out grey with them */
+  if (state === S.BREAK && breakLine >= 0){
+    ctx.save();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = "italic 600 " + Math.round(27 * SC) + "px 'Fraunces',Georgia,serif";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0,0,0,.9)'; ctx.shadowBlur = 26;
+    wrapped(CONFIG.BREAK_LINES[breakLine], W / 2, H * 0.42, W * 0.86, 36 * SC);
+    ctx.restore();
   }
   drawCracks();
 }
@@ -2411,7 +2428,7 @@ function openHunt(){
              (CONFIG.HUNT_PIECE[huntGot - 1] || '') + '</b>');
         if (huntGot >= need){
           note('huntNote', CONFIG.HUNT_FOUND);
-          setTimeout(revealPhoto, 900);
+          setTimeout(revealPhoto, 1800);   // let the third one land first
         }
       } else {
         sfx.pick();
