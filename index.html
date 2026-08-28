@@ -377,13 +377,19 @@
               background:linear-gradient(180deg,#ffd98a,#ff9ec0);
               box-shadow:0 0 14px rgba(255,180,140,.7); transition:height .12s linear; }
   #divePull{
-    position:absolute; left:0; right:0; bottom:calc(16% + var(--sab)); text-align:center;
-    font-family:'Nunito',sans-serif; font-weight:800; font-size:44px; letter-spacing:6px;
-    color:#fff; opacity:0; transform:scale(.8); transition:opacity .25s, transform .25s;
+    position:absolute; left:50%; bottom:calc(13% + var(--sab));
+    transform:translateX(-50%) scale(.8);
+    padding:13px 32px 15px; border-radius:99px;
+    border:2px solid rgba(255,255,255,.5); background:rgba(255,120,180,.22);
+    font-family:'Nunito',sans-serif; font-weight:800; font-size:34px; letter-spacing:6px;
+    color:#fff; opacity:0; transition:opacity .25s, transform .25s;
     text-shadow:0 0 40px rgba(255,150,200,.9), 0 2px 20px rgba(0,0,0,.8);
+    box-shadow:0 0 40px rgba(255,140,190,.45);
+    pointer-events:none; cursor:pointer; -webkit-tap-highlight-color:transparent;
   }
-  #divePull.on{ opacity:1; transform:scale(1); animation:pulsePull .7s ease-in-out infinite alternate; }
-  @keyframes pulsePull{ to{ transform:scale(1.09); } }
+  #divePull.on{ opacity:1; transform:translateX(-50%) scale(1); pointer-events:auto;
+                animation:pulsePull .7s ease-in-out infinite alternate; }
+  @keyframes pulsePull{ to{ transform:translateX(-50%) scale(1.09); } }
 
   #mute{
     position:fixed; right:13px; bottom:calc(13px + var(--sab)); z-index:45;
@@ -526,8 +532,8 @@ const CONFIG = {
     objects:  "assets/objects.webp",  // 6 cells, see OBJECTS
     doors:    "assets/doors.webp",    // 3 cells, see DOORS
     shakes:   "assets/shakes.webp",   // 4 cells: the things she jumps over
-    diver:    "assets/diver.webp",    // her, from above, in freefall
-    chute:    "assets/chute.webp",    // the canopy, from above
+    diver:    "assets/diver.webp",    // her back, hair up, in freefall
+    chute:    "assets/chute.webp",    // the canopy, from underneath
     hazards:  "assets/hazards.webp",  // 3 cells: cloud, birds, balloon
     floor:    "assets/floor.webp",    // travertine, laid in perspective bands
     water:    "assets/water.webp",    // the pool surface, same trick
@@ -640,7 +646,7 @@ const CONFIG = {
      She loves this sort of thing, so the game becomes it for a minute. */
   DIVE: {
     intro:   ["no floor.", "…okay then."],
-    hint:    "tilt your thumb — left and right",
+    hint:    "hold a side to steer",
     pull:    "PULL",
     pulled:  "¡Buen viaje!",
     after:   "You didn't hesitate. Not even slightly.",
@@ -893,8 +899,9 @@ let lit = 0;                           /* candles alight in the last scene */
 
 /* ---------------------------------------------------------- the fall */
 const dive = {
-  on:false, t:0, x:0, tx:0, vx:0, spin:0, chute:0, pulled:false,
-  hazards:[], sparks:[], next:0, hit:0, done:false
+  on:false, t:0, x:0, vx:0, roll:0, chute:0, pulled:false, steer:0,
+  hazards:[], streaks:[], fields:[], stars:null, next:0, hit:0, done:false,
+  vpx:0, vpy:0, hair:0
 };
 let combo = 0, best = 0, slow = 0, land = 0, comboIdx = 0, hitIdx = 0;
 let tauntIdx = 0, flash = 0, shakeLineIdx = 0;
@@ -2225,8 +2232,10 @@ function openDoors(){
 function startDive(){
   state = S.DIVE;
   dive.on = true; dive.t = 0; dive.chute = 0; dive.pulled = false; dive.done = false;
-  dive.x = dive.tx = W / 2; dive.vx = 0; dive.spin = 0; dive.hit = 0;
-  dive.hazards = []; dive.sparks = []; dive.next = 0.9;
+  dive.x = W / 2; dive.vx = 0; dive.roll = 0; dive.hit = 0; dive.steer = 0;
+  dive.hazards = []; dive.streaks = []; dive.fields = []; dive.next = 0.9;
+  dive.hair = 0; held.clear(); keyHeld.clear();
+  seedSky();
   sfx.whoosh(); buzz([20, 60, 20]);
   toast(CONFIG.DIVE.intro[0], 1300);
   setTimeout(() => { if (state === S.DIVE) toast(CONFIG.DIVE.intro[1], 1400); }, 1500);
@@ -2235,22 +2244,55 @@ function startDive(){
   document.body.classList.add('diving');
 }
 
-/* dragging anywhere steers her; a tap once the prompt is up pulls */
-function diveAt(x){ dive.tx = Math.max(46 * SC, Math.min(W - 46 * SC, x)); }
-cv.addEventListener('pointermove', e => {
-  if (state === S.DIVE && e.buttons) diveAt(e.clientX);
-}, { passive:true });
+/* -------------------------------------------------------------- steering
+   A thumb held on the left half pushes her left, the right half right,
+   and letting go lets the air straighten her out. Holding both sides at
+   once cancels — she just falls. The ripcord is a button of its own,
+   because the whole screen is now a control.                           */
+const held = new Map();                 // pointerId -> -1 | 1
+const keyHeld = new Set();
+function recalcSteer(){
+  let d = 0;
+  for (const v of held.values()) d += v;
+  if (keyHeld.has('L')) d -= 1;
+  if (keyHeld.has('R')) d += 1;
+  dive.steer = Math.max(-1, Math.min(1, d));
+}
+function sideOf(x){ return x < W / 2 ? -1 : 1; }
 cv.addEventListener('pointerdown', e => {
   if (state !== S.DIVE) return;
-  diveAt(e.clientX);
-  if (dive.t / CONFIG.DIVE.seconds >= CONFIG.DIVE.pullAt) pullChute();
+  /* no pointer capture here: it would retarget every later event at the
+     canvas and swallow the tap on PULL. window catches the release. */
+  held.set(e.pointerId, sideOf(e.clientX));
+  recalcSteer();
 }, { passive:true });
+cv.addEventListener('pointermove', e => {
+  if (state !== S.DIVE || !held.has(e.pointerId)) return;
+  held.set(e.pointerId, sideOf(e.clientX));      // slide across the middle to flip
+  recalcSteer();
+}, { passive:true });
+function letGo(e){ if (held.delete(e.pointerId)) recalcSteer(); }
+window.addEventListener('pointerup', letGo, { passive:true });
+window.addEventListener('pointercancel', letGo, { passive:true });
+window.addEventListener('keydown', e => {
+  if (state !== S.DIVE) return;
+  if (e.code === 'ArrowLeft'  || e.code === 'KeyA') keyHeld.add('L');
+  if (e.code === 'ArrowRight' || e.code === 'KeyD') keyHeld.add('R');
+  if (e.code === 'Enter' && dive.t / CONFIG.DIVE.seconds >= CONFIG.DIVE.pullAt) pullChute();
+  recalcSteer();
+});
+window.addEventListener('keyup', e => {
+  if (e.code === 'ArrowLeft'  || e.code === 'KeyA') keyHeld.delete('L');
+  if (e.code === 'ArrowRight' || e.code === 'KeyD') keyHeld.delete('R');
+  recalcSteer();
+});
+$('divePull').addEventListener('click', () => { ac(); pullChute(); });
 
 function pullChute(){
   if (dive.pulled) return;
   dive.pulled = true;
   sfx.whoosh(); sfx.good(); buzz([16, 60, 16, 60, 120]);
-  burst(dive.x, H * 0.40, '236,214,255', 30, 1.4);
+  burst(dive.x, H * HER_Y, '236,214,255', 30, 1.4);
   toast(CONFIG.DIVE.pulled, 2000);
   $('divePull').classList.remove('on');
   setTimeout(endDive, 3400);
@@ -2267,52 +2309,99 @@ function endDive(){
 }
 
 const DIVE_KIND = [0, 1, 2];
+/* Where she sits in frame, and how far ahead of her the ground is. The
+   camera rides just behind her shoulders, so everything the fall is
+   aimed at streams out of one point and grows on the way past.        */
+const HER_Y = 0.50, HER_Z = 0.30, Z_NEAR = 0.09;
+function seedSky(){
+  dive.stars = [];
+  for (let i = 0; i < 46; i++)
+    dive.stars.push({ x: Math.random(), y: Math.random(), r: 0.6 + Math.random() * 1.1,
+                      tw: Math.random() * 6.283 });
+}
+/* one point of the world, at distance z, as a place on the screen */
+function proj(ox, oy, z){
+  const sc = 0.45 / Math.max(Z_NEAR, z);
+  return [dive.vpx + ox * sc, dive.vpy + oy * sc, sc];
+}
+
+const ACC = 1600, MAXV = 640, DRAG = 3.4;
 function updateDive(dt){
   const D = CONFIG.DIVE;
   dive.t += dt;
   const k = Math.min(1, dive.t / D.seconds);
+  dive.hair += dt;
 
-  /* she follows the thumb, with weight */
-  dive.vx += ((dive.tx - dive.x) * 9 - dive.vx) * Math.min(1, dt * 8);
+  /* she leans into the hold, and the air pushes back when she lets go */
+  dive.vx += dive.steer * ACC * SC * dt;
+  dive.vx -= dive.vx * DRAG * (dive.steer ? 0.3 : 1) * dt;
+  dive.vx = Math.max(-MAXV * SC, Math.min(MAXV * SC, dive.vx));
   dive.x += dive.vx * dt;
-  dive.spin += ((dive.vx * 0.0016) - dive.spin) * Math.min(1, dt * 6);
+  const edge = 88 * SC;
+  if (dive.x < edge){ dive.x = edge; dive.vx *= -0.25; }
+  if (dive.x > W - edge){ dive.x = W - edge; dive.vx *= -0.25; }
+  dive.roll += ((dive.vx / (MAXV * SC)) * 0.30 - dive.roll) * Math.min(1, dt * 7);
   if (dive.hit > 0) dive.hit -= dt;
 
-  const fall = dive.pulled ? 130 * SC : (620 + k * 260) * SC;
+  /* the camera hangs behind her, so the world slides the other way */
+  dive.vpx = W / 2 - (dive.x - W / 2) * 0.42;
+  dive.vpy = H * 0.30;
 
-  /* things she is falling past, coming up from below */
+  /* how fast the world is coming at her */
+  const rush = dive.pulled ? 0.16 : 0.52 + k * 0.34;
+
+  /* things in the air with her */
   dive.next -= dt;
   if (!dive.pulled && dive.next <= 0){
-    dive.next = 0.30 + Math.random() * 0.36;
+    dive.next = 0.30 + Math.random() * 0.34;
+    const a = Math.random() * 6.283, rr = 70 + Math.random() * 130;
     dive.hazards.push({
-      x: 40 * SC + Math.random() * (W - 80 * SC),
-      y: H + 70 * SC,
+      ox: Math.cos(a) * rr * SC,
+      oy: Math.sin(a) * rr * 0.7 * SC - 20 * SC,
+      z: 1, base: (118 + Math.random() * 52) * SC,
       kind: DIVE_KIND[Math.floor(Math.random() * 3)],
-      r: 34 * SC + Math.random() * 16 * SC,
-      sp: 0.85 + Math.random() * 0.4
+      sp: 0.85 + Math.random() * 0.35
     });
   }
   for (const h of dive.hazards){
-    h.y -= fall * h.sp * dt;
-    if (h.dead || dive.hit > 0 || dive.pulled) continue;
-    if (Math.hypot(h.x - dive.x, h.y - H * 0.40) < h.r + 26 * SC){
-      h.dead = true;
-      dive.hit = 0.8; shake = 14; buzz(40);
-      sfx.clunk();
-      burst(h.x, h.y, '236,214,255', 14, 0.9);
+    const was = h.z;
+    h.z -= rush * h.sp * dt;
+    /* it counts the moment it reaches her, not before and not after */
+    if (was > HER_Z && h.z <= HER_Z && dive.hit <= 0 && !dive.pulled){
+      const pt = proj(h.ox, h.oy, HER_Z), r = h.base * pt[2] * 0.34;
+      if (Math.abs(pt[0] - dive.x) < r + 44 * SC &&
+          Math.abs(pt[1] - H * HER_Y) < r + 62 * SC){
+        dive.hit = 0.8; shake = 14; buzz(40);
+        sfx.clunk();
+        burst(pt[0], pt[1], '236,214,255', 14, 0.9);
+        h.dead = true;
+      }
     }
   }
-  dive.hazards = dive.hazards.filter(h => !h.dead && h.y > -120 * SC);
+  dive.hazards = dive.hazards.filter(h => !h.dead && h.z > 0.15);
 
-  /* the rush of air, drawn as streaks */
-  dive.next2 = (dive.next2 || 0) - dt;
-  if (dive.next2 <= 0){
-    dive.next2 = 0.02;
-    dive.sparks.push({ x: Math.random() * W, y: H + 20, len: 30 + Math.random() * 90,
-                       a: 0.10 + Math.random() * 0.18 });
+  /* the ground: patches of dark field that widen as they arrive */
+  if ((dive.fieldT = (dive.fieldT || 0) - dt) <= 0){
+    dive.fieldT = 0.16;
+    dive.fields.push({ ox: (Math.random() - 0.5) * 560 * SC,
+                       oy: (70 + Math.random() * 190) * SC,
+                       w: (110 + Math.random() * 180) * SC,
+                       h: (14 + Math.random() * 22) * SC,
+                       z: 1, tone: Math.random() });
   }
-  for (const q of dive.sparks) q.y -= fall * 1.25 * dt;
-  dive.sparks = dive.sparks.filter(q => q.y > -160);
+  for (const f of dive.fields) f.z -= rush * 0.9 * dt;
+  dive.fields = dive.fields.filter(f => f.z > Z_NEAR);
+
+  /* the air itself, streaking out of the point she is falling at */
+  if ((dive.streakT = (dive.streakT || 0) - dt) <= 0){
+    dive.streakT = 0.014;
+    const a = Math.random() * 6.283;
+    dive.streaks.push({ ox: Math.cos(a) * (40 + Math.random() * 90) * SC,
+                        oy: Math.sin(a) * (40 + Math.random() * 90) * SC,
+                        z: 1, a: 0.10 + Math.random() * 0.22 });
+  }
+  for (const q of dive.streaks) q.z -= rush * 1.45 * dt;
+  dive.streaks = dive.streaks.filter(q => q.z > Z_NEAR);
 
   if (dive.pulled) dive.chute = Math.min(1, dive.chute + dt * 2.2);
 
@@ -2325,75 +2414,132 @@ function updateDive(dt){
   $('diveBar').firstElementChild.style.height = (100 - k * 100) + '%';
 }
 
+/* Her hair is one still picture, cut into strips and pushed about: the
+   crown moves, the shoulders do not.                                   */
+const HAIR_TO = 0.44, STRIPS = 22;
+function drawWavy(im, cx, cy, w, h, amp){
+  const sw = im.naturalWidth, sh = im.naturalHeight, bh = sh / STRIPS;
+  const t = dive.hair;
+  for (let i = 0; i < STRIPS; i++){
+    const v = (i + 0.5) / STRIPS;
+    const wgt = Math.max(0, 1 - v / HAIR_TO);
+    const dx = Math.sin(t * 3.4 + i * 0.62) * amp * wgt * wgt;
+    ctx.drawImage(im, 0, i * bh, sw, bh + 1,
+                  cx - w / 2 + dx, cy - h / 2 + i * (h / STRIPS), w, h / STRIPS + 1);
+  }
+}
+
 function drawDive(){
   const D = CONFIG.DIVE;
   const k = Math.min(1, dive.t / D.seconds);
-  /* looking straight down: dark sky above, the ground coming up warm */
-  const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0,   mixc([10,5,22],  [26,14,44], k));
-  g.addColorStop(0.55,mixc([26,13,52], [60,32,86], k));
-  g.addColorStop(1,   mixc([48,24,86], [128,84,120], k));
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H);
+  const hy = H * 0.16 + dive.roll * H * 0.05;   // the horizon, tilting with her
 
-  /* the ground, coming up. It is the only thing that says this is a fall
-     and not a screensaver. */
-  if (k > 0.35){
-    const g2 = Math.min(1, (k - 0.35) / 0.65);
-    const gy = H - H * 0.9 * g2 * g2;
-    const gg = ctx.createLinearGradient(0, gy, 0, H);
-    gg.addColorStop(0, 'rgba(150,104,120,0)');
-    gg.addColorStop(1, `rgba(${Math.round(120+70*g2)},${Math.round(88+50*g2)},${Math.round(110+40*g2)},${0.5*g2})`);
-    ctx.fillStyle = gg;
-    ctx.fillRect(0, gy, W, H - gy);
-    ctx.globalAlpha = 0.20 * g2;
-    ctx.fillStyle = '#2a1b3a';
-    for (let i = 0; i < 7; i++){
-      const fx = ((i * 137 + Math.sin(i) * 90) % W);
-      const fw = (60 + i * 24) * (0.4 + g2);
-      ctx.fillRect(fx - fw/2, gy + (H - gy) * (0.2 + (i % 3) * 0.22), fw, 14 * (0.4 + g2));
+  /* looking down from behind her: a thin band of sky, and a lot of ground */
+  const g = ctx.createLinearGradient(0, 0, 0, hy + 2);
+  g.addColorStop(0, mixc([8,4,20],   [16,9,36],    k));
+  g.addColorStop(1, mixc([64,32,92], [168,96,116], k));
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, hy + 2);
+
+  if (dive.stars){
+    ctx.fillStyle = '#fff';
+    for (const st of dive.stars){
+      ctx.globalAlpha = (0.25 + 0.45 * (0.5 + 0.5 * Math.sin(dive.hair * 2 + st.tw))) * (1 - k * 0.7);
+      ctx.beginPath(); ctx.arc(st.x * W, st.y * hy, st.r * SC, 0, 6.2832); ctx.fill();
     }
     ctx.globalAlpha = 1;
   }
 
-  ctx.strokeStyle = 'rgba(226,214,255,.5)';
-  ctx.lineWidth = 1.4;
-  for (const q of dive.sparks){
-    ctx.globalAlpha = q.a;
-    ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(q.x, q.y + q.len); ctx.stroke();
+  const gg = ctx.createLinearGradient(0, hy, 0, H);
+  gg.addColorStop(0,    mixc([58,32,80], [150,92,110], k));
+  gg.addColorStop(0.42, mixc([34,17,54], [104,62,94],  k));
+  gg.addColorStop(1,    mixc([18,9,32],  [64,36,66],   k));
+  ctx.fillStyle = gg; ctx.fillRect(0, hy, W, H - hy);
+
+  /* the fields she is falling towards */
+  for (const f of dive.fields){
+    const pt = proj(f.ox, f.oy, f.z);
+    if (pt[1] < hy) continue;
+    ctx.globalAlpha = Math.min(0.45, (1 - f.z) * 0.5) * (0.3 + f.tone * 0.45)
+                      * (0.35 + k * 0.65);        // the ground only shows up late
+    ctx.fillStyle = f.tone > 0.6 ? '#1d1130' : '#2a1940';
+    ctx.beginPath();
+    ctx.ellipse(pt[0], pt[1], f.w * pt[2] * 0.5, f.h * pt[2] * 0.5, 0, 0, 6.2832);
+    ctx.fill();
   }
   ctx.globalAlpha = 1;
 
-  for (const h of dive.hazards){
-    if (ART.hazards) cellDraw(ART.hazards, 3, h.kind, h.x, h.y, h.r * 2.4);
-    else {
-      ctx.fillStyle = 'rgba(226,214,255,.5)';
-      ctx.beginPath(); ctx.arc(h.x, h.y, h.r, 0, 6.2832); ctx.fill();
-    }
+  /* the rush of air, drawn as streaks leaving the vanishing point */
+  ctx.strokeStyle = 'rgba(232,220,255,.75)';
+  ctx.lineWidth = 1.5 * SC;
+  for (const q of dive.streaks){
+    const a1 = proj(q.ox, q.oy, q.z), a2 = proj(q.ox, q.oy, q.z * 1.30);
+    ctx.globalAlpha = q.a * Math.min(1, (1 - q.z) * 2.2);
+    ctx.beginPath(); ctx.moveTo(a2[0], a2[1]); ctx.lineTo(a1[0], a1[1]); ctx.stroke();
   }
+  ctx.globalAlpha = 1;
 
-  const y = H * 0.40;
-  ctx.save();
-  ctx.translate(dive.x, y);
-  ctx.rotate(dive.spin);
-  if (dive.hit > 0 && Math.floor(dive.hit * 18) % 2) ctx.globalAlpha = 0.4;
-  if (dive.chute > 0.01 && ART.chute){
-    const w = 260 * SC * dive.chute;
-    const h2 = w * (ART.chute.naturalHeight / ART.chute.naturalWidth);
-    ctx.globalAlpha *= Math.min(1, dive.chute * 1.6);
-    ctx.drawImage(ART.chute, -w / 2, -h2 * 0.62, w, h2);
+  const paint = h => {
+    const pt = proj(h.ox, h.oy, h.z);
+    ctx.globalAlpha = Math.min(1, (1 - h.z) * 3)
+                      * Math.max(0, Math.min(1, (h.z - 0.15) / 0.11));
+    if (ART.hazards) cellDraw(ART.hazards, 3, h.kind, pt[0], pt[1], h.base * pt[2]);
+    else { ctx.fillStyle = 'rgba(226,214,255,.5)';
+           ctx.beginPath(); ctx.arc(pt[0], pt[1], h.base * pt[2] * 0.3, 0, 6.2832); ctx.fill(); }
     ctx.globalAlpha = 1;
-  }
+  };
+  for (const h of dive.hazards) if (h.z >= HER_Z) paint(h);
+
+  /* her, from behind, hair going one way and the ground the other */
+  ctx.save();
+  ctx.translate(dive.x, H * HER_Y);
+  ctx.rotate(dive.roll * 0.55);
+  if (dive.hit > 0 && Math.floor(dive.hit * 18) % 2) ctx.globalAlpha = 0.4;
   if (ART.diver){
-    const w = 128 * SC * (1 - dive.chute * 0.35);
+    const w = 190 * SC * (1 - dive.chute * 0.30);
     const h2 = w * (ART.diver.naturalHeight / ART.diver.naturalWidth);
-    ctx.drawImage(ART.diver, -w / 2, -h2 / 2, w, h2);
+    /* the canopy comes up behind her, its lines landing on her shoulders */
+    if (dive.chute > 0.01 && ART.chute){
+      const cw = 360 * SC * dive.chute;
+      const chh = cw * (ART.chute.naturalHeight / ART.chute.naturalWidth);
+      const a0 = ctx.globalAlpha;
+      ctx.globalAlpha = a0 * Math.min(1, dive.chute * 1.6);
+      ctx.drawImage(ART.chute, -cw / 2, -h2 * 0.02 - chh, cw, chh);
+      ctx.globalAlpha = a0;
+    }
+    drawWavy(ART.diver, 0, 0, w, h2,
+             (7 + Math.abs(dive.vx) / SC * 0.012) * SC * (1 - dive.chute * 0.7));
   } else {
     ctx.fillStyle = '#f3ecff';
     ctx.beginPath(); ctx.arc(0, 0, 26 * SC, 0, 6.2832); ctx.fill();
   }
   ctx.restore();
   ctx.globalAlpha = 1;
+
+  for (const h of dive.hazards) if (h.z < HER_Z) paint(h);   // what she just missed
+
+  /* which way she is leaning, so a first-time thumb knows it worked */
+  if (!dive.pulled) drawSteerHint();
+}
+
+function drawSteerHint(){
+  const y = H * 0.74;
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 3 * SC; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (const dir of [-1, 1]){
+    const on = dive.steer === dir;
+    const x = dir < 0 ? 40 * SC : W - 40 * SC;
+    ctx.globalAlpha = on ? 0.85 : 0.20;
+    for (let i = 0; i < 2; i++){
+      const o = (i * 13 + (on ? 3 : 0)) * SC * dir;   // and they nudge over when held
+      ctx.beginPath();
+      ctx.moveTo(x - 8 * SC * dir + o, y - 13 * SC);
+      ctx.lineTo(x + 8 * SC * dir + o, y);
+      ctx.lineTo(x - 8 * SC * dir + o, y + 13 * SC);
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.lineCap = 'butt';
 }
 function mixc(a, b, k){
   return 'rgb(' + Math.round(a[0]+(b[0]-a[0])*k) + ',' +
