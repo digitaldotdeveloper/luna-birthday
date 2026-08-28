@@ -780,8 +780,8 @@ const CONFIG = {
 
   /* in this order, one at a time — she is meant to do all three */
   KEYS: [
-    { id:"memory",   icon:"💜", label:"A memory"   },
     { id:"wish",     icon:"✨", label:"A wish"     },
+    { id:"memory",   icon:"💜", label:"A memory"   },
     { id:"surprise", icon:"🎁", label:"A surprise" }
   ],
 
@@ -800,6 +800,13 @@ const CONFIG = {
   HUNT_AFTER:  "Yeah… I remember this one.",
 
   QUESTIONS: [
+    { q:"How many candles did you collect?",
+      o:["21","22","23","I wasn’t counting"], a:2,
+      after:"Twenty‑three. One for every year of you." },
+    { q:"🍔 If Luna could bring back one thing from her McDonald’s days, what would she choose?",
+      o:["Free fries for life 🍟","Unlimited McFlurrys 🍦",
+         "Getting paid to eat 🍔","Never working there again 💀"], a:3,
+      after:"Never again. I have never seen anyone answer that fast." },
     { q:"Someone hands Luna a glass of milk. She:",
       o:["Drinks it","Politely declines","Leaves the country","Calls the police"], a:2,
       after:"Correct. Which is why the last two minutes happened." },
