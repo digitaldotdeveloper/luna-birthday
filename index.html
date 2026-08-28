@@ -852,8 +852,8 @@ const CONFIG = {
   },
 
   /* the last thing it says, one line at a time */
-  /* it has said everything already. Put a line here only if it earns it. */
-  FINAL_LINES: [],
+  /* one line, and his name under it. Nothing after that. */
+  FINAL_LINES: [ "Feliz cumpleaños, Luna. 💜" ],
   SIGNED: "— Firass",
   /* set to false and this line never appears */
   FLIRTY_ON: false,
@@ -3024,8 +3024,6 @@ function finalWords(){
     duck();
     const num = String(CONFIG.WHATSAPP || '').replace(/\D/g, '');
     if (num.length >= 8){
-      line.innerHTML = '<span class="sign">say something back →</span>';
-      line.className = 'in sign'; line.id = 'finaleLine';
       setTimeout(() => {
         /* api.whatsapp.com keeps the prefilled text more reliably than
            wa.me does once the phone hands it to the app */
