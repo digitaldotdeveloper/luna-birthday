@@ -1106,7 +1106,7 @@ let candles = 0, frosting = 3, shake = 0, t = 0, lineIdx = 0;
 let scroll = 0, speed = 0, nextSpawn = 0, breakLine = -1, glow = 0;
 /* nothing is thrown at her until she has worked out that a tap is a jump */
 let warm = 0, taught = false, hintA = 0;
-const WARM_AFTER = 1.5, WARM_CAP = 12;
+const WARM_AFTER = 6, WARM_CAP = 15;   // she gets the deck to herself first
 let learning = false;                  /* the opening stretch of the run */
 let colour = 0, unlocking = false;     /* 0 = drained, 1 = her colour, everywhere */
 let dark = 1;                          /* and until then there is nothing to see */
@@ -1378,8 +1378,7 @@ function startGame(){
   state = S.PLAY;
   breakLine = -1;
   runner.pose = -1;              // back to the run cycle; the gate parked her
-  $('hud').classList.add('on');
-  toast('tap to jump', 1600);
+  /* the counter stays away until there is something to count */
 }
 
 /* ============================================================ the run ===
@@ -1418,7 +1417,7 @@ function spawnAhead(){
     ds: (Math.random() - 0.5) * 2.2
   });
   const heart = candles > 3 && candles < CONFIG.GOAL - 3 && Math.random() < 0.16;
-  const n = heart ? 1 : 1 + (Math.random() < 0.4 ? 1 : 0);
+  const n = heart ? 1 : 1 + (Math.random() < 0.2 ? 1 : 0);
   for (let i = 0; i < n; i++){
     const u = (i - (n - 1) / 2) / Math.max(1, n);
     pickups.push({ x: x + u * 108 * SC,
@@ -1426,7 +1425,9 @@ function spawnAhead(){
                    ph: Math.random() * 6.28, heart });
   }
   /* and a stretch of clear deck before the next one */
-  nextSpawn = x + (450 + Math.random() * 330) * SC * (1.22 - prog * 0.34);
+  /* twenty-three is a lot to collect, so it is the deck between them that
+     makes the run, not the number of them */
+  nextSpawn = x + (760 + Math.random() * 430) * SC * (1.22 - prog * 0.34);
 }
 function burst(x, y, col, n, big){
   for (let i = 0; i < n; i++){
@@ -1471,6 +1472,7 @@ function update(dt){
     warm += dt;
     learning = !(taught && warm > WARM_AFTER) && warm < WARM_CAP;
     hintA += ((learning ? 1 : 0) - hintA) * Math.min(1, dt * 3.2);
+    $('hud').classList.toggle('on', !learning);
     if (learning) nextSpawn = scroll + W * 0.9;      // and the first one is not right there
     const prog = learning ? 0 : candles / CONFIG.GOAL;
     speed += ((300 + prog * 300) * SC - speed) * Math.min(1, dt * 0.7);
