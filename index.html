@@ -1180,7 +1180,7 @@ function resetRun(keep){
   frosting = 3; shake = 0; outro = 0;
   combo = 0; slow = 0; land = 0; comboIdx = 0; hitIdx = 0; runner.pose = -1;
   flash = 0;
-  scroll = 0; speed = 350 * SC;
+  scroll = 0; speed = 430 * SC;
   nextSpawn = (keep ? W * 2.1 : W * 0.9);   // a breath before the first one back
   runner.y = groundY; runner.vy = 0; runner.ground = true; runner.ft = 0; runner.hurt = 0;
   paintHUD();
@@ -1429,7 +1429,7 @@ const LETTERS = ['H','A','P','P','Y','B','D','A','Y','!'];
    that is the point of it. Beat 2 is him, on foot, with a heart.      */
 function teach(dt){
   if (tut === 0){
-    if (tutT > 5.4 || (taught && tutT > 3.6)){
+    if (tutT > 4.2 || (taught && tutT > 2.8)){
       tut = 1; tutT = 0;
       obstacles.push({ x: scroll + W + 60, kind: 1, r: 22 * SC, tall:false, tut:true,
                        ch:'!', hue: 320, spin: 0, ds: 1.4 });
@@ -1447,7 +1447,7 @@ function teach(dt){
     burst(runner.x, groundY - 96 * SC, '255,90,130', 22, 1.1);
     toast(CONFIG.TUTORIAL.give, 2200);
   }
-  if (gift.t > GIFT_FALL + 2.2){ tut = 3; gift.on = false; }
+  if (gift.t > GIFT_FALL + 1.6){ tut = 3; gift.on = false; }
 }
 const GIFT_FALL = 1.15;               // how long it takes to reach her
 
@@ -1473,9 +1473,8 @@ function spawnAhead(){
                    ph: Math.random() * 6.28, heart });
   }
   /* and a stretch of clear deck before the next one */
-  /* twenty-three is a lot to collect, so it is the deck between them that
-     makes the run, not the number of them */
-  nextSpawn = x + (870 + Math.random() * 490) * SC * (1.22 - prog * 0.34);
+  /* close enough together that twenty-three does not take all night */
+  nextSpawn = x + (640 + Math.random() * 330) * SC * (1.22 - prog * 0.20);
 }
 function burst(x, y, col, n, big){
   for (let i = 0; i < n; i++){
@@ -1526,7 +1525,7 @@ function update(dt){
     $('hud').classList.toggle('on', tut >= 2);
     if (learning) nextSpawn = scroll + W * 0.9;      // and the first one is not right there
     const prog = learning ? 0 : candles / CONFIG.GOAL;
-    speed += ((350 + prog * 330) * SC - speed) * Math.min(1, dt * 0.7);
+    speed += ((430 + prog * 390) * SC - speed) * Math.min(1, dt * 0.7);
   }
   if (state === S.PLAY || state === S.WON) scroll += speed * dt;
 
