@@ -152,6 +152,7 @@
   #toast.on{ opacity:1; transform:translateY(0); }
   /* out of the way of a panel's own heading */
   body.layered #toast{ top:9%; font-size:21px; }
+  body.diving #toast{ top:10%; font-size:22px; }
 
   .screen{
     position:fixed; inset:0; z-index:30;
@@ -245,8 +246,13 @@
   .key.done{ background:linear-gradient(180deg, rgba(150,110,220,.9), rgba(84,48,150,.9));
              box-shadow:0 0 0 2px rgba(214,184,255,.45), 0 12px 34px rgba(150,110,220,.32); }
   .key.done .st{ color:#f0e2ff; }
+  .key.locked{ background:linear-gradient(180deg, rgba(40,28,58,.7), rgba(26,17,44,.7)); }
+  .key.locked .ic, .key.locked .lb{ opacity:.45; }
+  .key.locked .st{ color:#6a5f80; }
 
   /* ---- the hunt ---- */
+  #huntCount{ font-size:13px; color:var(--gold); letter-spacing:1.4px; font-weight:800;
+              margin:-8px 0 12px; }
   #objGrid{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px;
             width:min(340px,92vw); margin-top:4px; }
   .obj{
@@ -358,6 +364,27 @@
   #finaleLine.in{ opacity:1; transform:translateY(0); }
   #finaleLine.sign{ font-size:clamp(19px,5vw,24px); color:var(--lilac); }
 
+  /* how far there is left to fall, and the one thing she has to do */
+  #diveUI{ position:fixed; inset:0; z-index:22; pointer-events:none;
+           opacity:0; transition:opacity .5s ease; }
+  #diveUI.on{ opacity:1; }
+  #diveBar{
+    position:absolute; right:16px; top:calc(var(--sat) + 16%); width:6px; height:46%;
+    border-radius:99px; background:rgba(255,255,255,.14); overflow:hidden;
+    display:flex; align-items:flex-end;
+  }
+  #diveBar i{ display:block; width:100%; height:100%; border-radius:99px;
+              background:linear-gradient(180deg,#ffd98a,#ff9ec0);
+              box-shadow:0 0 14px rgba(255,180,140,.7); transition:height .12s linear; }
+  #divePull{
+    position:absolute; left:0; right:0; bottom:calc(16% + var(--sab)); text-align:center;
+    font-family:'Nunito',sans-serif; font-weight:800; font-size:44px; letter-spacing:6px;
+    color:#fff; opacity:0; transform:scale(.8); transition:opacity .25s, transform .25s;
+    text-shadow:0 0 40px rgba(255,150,200,.9), 0 2px 20px rgba(0,0,0,.8);
+  }
+  #divePull.on{ opacity:1; transform:scale(1); animation:pulsePull .7s ease-in-out infinite alternate; }
+  @keyframes pulsePull{ to{ transform:scale(1.09); } }
+
   #mute{
     position:fixed; right:13px; bottom:calc(13px + var(--sab)); z-index:45;
     width:38px; height:38px; border-radius:50%; border:1px solid rgba(255,255,255,.16);
@@ -437,7 +464,8 @@
 
 <div class="layer" id="l-hunt">
   <h2>A memory.</h2>
-  <p class="sub">One of these means something. Tap around.</p>
+  <p class="sub" id="huntSub">Three of these are ours. Find them.</p>
+  <div id="huntCount">0 / 3</div>
   <div id="objGrid"></div>
   <div class="note" id="huntNote">&nbsp;</div>
 </div>
@@ -471,6 +499,11 @@
 
 <div id="finale"><div id="finaleLine"></div></div>
 
+<div id="diveUI">
+  <div id="diveBar"><i></i></div>
+  <div id="divePull">PULL</div>
+</div>
+
 <button id="mute" aria-label="sound">♪</button>
 
 <script>
@@ -492,6 +525,10 @@ const CONFIG = {
     room:     "assets/room.webp",     // where it ends
     objects:  "assets/objects.webp",  // 6 cells, see OBJECTS
     doors:    "assets/doors.webp",    // 3 cells, see DOORS
+    shakes:   "assets/shakes.webp",   // 4 cells: the things she jumps over
+    diver:    "assets/diver.webp",    // her, from above, in freefall
+    chute:    "assets/chute.webp",    // the canopy, from above
+    hazards:  "assets/hazards.webp",  // 3 cells: cloud, birds, balloon
     floor:    "assets/floor.webp",    // travertine, laid in perspective bands
     water:    "assets/water.webp",    // the pool surface, same trick
     mountains:"assets/mountains.webp",// the far ridges
@@ -536,7 +573,9 @@ const CONFIG = {
 
   /* ---- the card is not done. It says these as she runs. ---- */
   TAUNTS: [ "U CANT DELETE ME", "IM STILL HERE!!!", "ok well FINE" ],
-  /* it never actually does anything about it */
+  /* what it throws at her. She does not drink milk, so this is war. */
+  SHAKE_LINES: [ "it's throwing milkshakes.", "it knows. of course it knows.",
+                 "not the milk." ],
 
   WIN_TITLE: "Twenty-three.",
   WIN_BODY:  "Twenty-three candles, and I'd carry them all again tomorrow.",
@@ -547,38 +586,40 @@ const CONFIG = {
   PHOTO: "assets/memory-photo.jpg",
   PHOTO_CAPTION: "us. no notes.",
 
+  /* in this order, one at a time — she is meant to do all three */
   KEYS: [
     { id:"memory",   icon:"💜", label:"A memory"   },
     { id:"wish",     icon:"✨", label:"A wish"     },
     { id:"surprise", icon:"🎁", label:"A surprise" }
   ],
 
-  /* one of these is the one. The rest are there to be funny. */
+  /* Three of these are ours. She needs all three before it develops. */
   OBJECTS: [
     { i:0, key:true, line:"The purple one. You had it on all night." },
-    { i:1, line:"You took about forty of these. I'm in two of them." },
-    { i:2, line:"\"Five minutes away.\" You were not five minutes away." },
-    { i:3, line:"Somebody named you after this. Good call." },
-    { i:4, line:"Indoors. At night. Iconic." },
-    { i:5, line:"You said you weren't hungry." }
+    { i:1, key:true, line:"You took about forty of these. I'm in two of them." },
+    { i:2,           line:"\"Five minutes away.\" You were not five minutes away." },
+    { i:3, key:true, line:"Somebody named you after this. Good call." },
+    { i:4,           line:"Indoors. At night. Iconic." },
+    { i:5,           line:"You said you weren't hungry." }
   ],
-  HUNT_HINT:   "Not that one.",
+  HUNT_SUB:    "Three of these are ours. Find them.",
+  HUNT_PIECE:  ["one.", "two.", "…there it is."],
   HUNT_FOUND:  "MEMORY UNLOCKED 📸",
   HUNT_AFTER:  "Yeah… I remember this one.",
 
   QUESTIONS: [
-    { q:"What's Luna's favourite colour?",
-      o:["Blue","Purple","Green","Whatever looks expensive"], a:1,
-      after:"Obviously." },
-    { q:"How many candles are we dealing with today?",
-      o:["22","23","Don't","24, but she'd deny it"], a:1,
-      after:"Twenty-three. Suits you." },
+    { q:"Someone hands Luna a glass of milk. She:",
+      o:["Drinks it","Politely declines","Leaves the country","Calls the police"], a:2,
+      after:"Correct. Which is why the last two minutes happened." },
     { q:"Luna says she'll be ready in five minutes. Realistically?",
       o:["Five minutes","Fifteen","Forty","She's already asleep"], a:2,
       after:"Forty. Worth it every time." },
     { q:"Correct response to \"I'm not hungry\"?",
       o:["Believe her","Order anyway","Argue","Eat alone, bravely"], a:1,
-      after:"Order anyway. You always finish half of mine." }
+      after:"Order anyway. You always finish half of mine." },
+    { q:"Offer Luna something completely reckless. She says:",
+      o:["No","Let me think about it","Already in the car","Send me the details"], a:2,
+      after:"Never once had to ask you twice." }
   ],
   QUIZ_RIGHT:  "Muy bien. 😌",
   QUIZ_WRONG:  "Intenta otra vez.",
@@ -591,9 +632,21 @@ const CONFIG = {
     { lb:"STUPID", tg:"probably fine", res:"Much better.",
       det:"He goes in headfirst and comes back out wearing the cake." },
     { lb:"DEFINITELY A BAD IDEA", tg:"do not", res:"🚨 LUNA HAS MADE A TERRIBLE DECISION",
-      det:"Alarms. Sprinklers. He is already running." }
+      det:"There is no floor behind this one.", dive:true }
   ],
   DOORS_AFTER: "Right. That's enough of that.",
+
+  /* ---------------------- what is behind the third door --------------
+     She loves this sort of thing, so the game becomes it for a minute. */
+  DIVE: {
+    intro:   ["no floor.", "…okay then."],
+    hint:    "tilt your thumb — left and right",
+    pull:    "PULL",
+    pulled:  "¡Buen viaje!",
+    after:   "You didn't hesitate. Not even slightly.",
+    seconds: 15,          // how long the fall lasts
+    pullAt:  0.72         // how far down before the chute prompt appears
+  },
 
   /* the last thing it says, one line at a time */
   FINAL_LINES: [
@@ -823,7 +876,7 @@ function runFrame(i, x, y, h){
 }
 
 /* --------------------------------------------------------------- state */
-const S = { CARD:0, DEAD:1, BREAK:2, ASK:3, PLAY:4, LOST:5, WON:6, QUEST:7, ROOM:8 };
+const S = { CARD:0, DEAD:1, BREAK:2, ASK:3, PLAY:4, LOST:5, WON:6, QUEST:7, DIVE:8, ROOM:9 };
 let state = S.CARD;
 
 let stars = [], lights = [], hills = [], props = [], boards = [];
@@ -837,8 +890,14 @@ const sparks = [];
 let sparkT = 0;
 const got = {};                        /* which of the three she has */
 let lit = 0;                           /* candles alight in the last scene */
+
+/* ---------------------------------------------------------- the fall */
+const dive = {
+  on:false, t:0, x:0, tx:0, vx:0, spin:0, chute:0, pulled:false,
+  hazards:[], sparks:[], next:0, hit:0, done:false
+};
 let combo = 0, best = 0, slow = 0, land = 0, comboIdx = 0, hitIdx = 0;
-let tauntIdx = 0, flash = 0;
+let tauntIdx = 0, flash = 0, shakeLineIdx = 0;
 /* Nobody should have to run the whole pool twice: a stumble costs a life,
    never her progress. */
 let outro = 0;                                   /* 0..1, the arrival */
@@ -1024,16 +1083,16 @@ window.addEventListener('keydown', e => { if (e.code === 'Space'){ e.preventDefa
 window.addEventListener('keyup',   e => { if (e.code === 'Space') runner.held = false; });
 
 const LETTERS = ['H','A','P','P','Y','B','D','A','Y','!'];
-const KINDS = ['letter', 'balloon', 'star', 'cone'];
+/* the four milkshakes, by cell index in the strip */
 function spawnAhead(){
   const prog = candles / CONFIG.GOAL;
   const x = scroll + W + 60;
 
   /* an obstacle, then candles arced over the top of it */
   const tall = Math.random() < 0.3 + prog * 0.2;
-  const kind = KINDS[Math.floor(Math.random() * KINDS.length)];
+  const kind = Math.floor(Math.random() * 4);      // which milkshake
   obstacles.push({
-    x, kind, r: (tall ? 27 : 21) * SC, tall,
+    x, kind, r: (tall ? 25 : 20) * SC, tall,
     ch: LETTERS[Math.floor(Math.random() * LETTERS.length)],
     hue: Math.floor(Math.random() * 360), spin: Math.random() * 6.28,
     ds: (Math.random() - 0.5) * 2.2
@@ -1076,6 +1135,12 @@ function update(dt){
     speed *= Math.pow(0.02, dt);                 // he coasts to a stop
   }
   if (flash > 0) flash -= dt * 2.2;
+  if (state === S.DIVE){
+    updateDive(dt);
+    for (const q of parts){ q.x += q.vx*dt; q.y += q.vy*dt; q.vy += 220*dt; q.life -= dt*1.2; }
+    parts = parts.filter(q => q.life > 0);
+    return;
+  }
   updateSparks(dt);
   if (state === S.PLAY){
     const prog = candles / CONFIG.GOAL;
@@ -1120,6 +1185,9 @@ function update(dt){
       o.dead = true;
       frosting--; shake = 18; runner.hurt = 1.15; combo = 0;
       sfx.hurt(); buzz([12, 40, 12]);
+      if (shakeLineIdx < CONFIG.SHAKE_LINES.length){
+        toast(CONFIG.SHAKE_LINES[shakeLineIdx++], 1600);
+      }
       burst(sx, groundY - o.r, '255,120,190', 20, 1.2);
       paintHUD();
       if (frosting <= 0){ lose(); return; }
@@ -1623,26 +1691,39 @@ function drawObstacle(o){
   const x = o.x - scroll, r = o.r;
   ctx.fillStyle = 'rgba(0,0,0,.30)';
   ctx.beginPath(); ctx.ellipse(x, groundY + 3 * SC, r * 0.9, 7 * SC, 0, 0, 6.2832); ctx.fill();
+
+  /* one of the four, standing on the deck, waddling with a grudge */
+  if (ART.shakes){
+    const h = (o.tall ? 96 : 78) * SC;
+    const cw = ART.shakes.naturalWidth / 4, ch = ART.shakes.naturalHeight;
+    const w = h * (cw / ch);
+    ctx.save();
+    ctx.translate(x, groundY);
+    ctx.rotate(Math.sin(o.spin * 2) * 0.07);
+    ctx.drawImage(ART.shakes, o.kind * cw, 0, cw, ch, -w / 2, -h, w, h);
+    ctx.restore();
+    return;
+  }
   ctx.save();
   ctx.translate(x, groundY - r);
   ctx.rotate(Math.sin(o.spin) * 0.13);
   ctx.scale(SC * (o.tall ? 1.3 : 1), SC * (o.tall ? 1.3 : 1));
   ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.lineJoin = 'round';
-  if (o.kind === 'letter'){
+  if (o.kind === 0){
     const g = ctx.createLinearGradient(0, -20, 0, 20);
     g.addColorStop(0, '#ff2d2d'); g.addColorStop(0.4, '#ffe600');
     g.addColorStop(0.75, '#22ff44'); g.addColorStop(1, '#00c8ff');
     ctx.font = '900 40px Impact,"Arial Black",sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.strokeText(o.ch, 0, 1); ctx.fillStyle = g; ctx.fillText(o.ch, 0, 1);
-  } else if (o.kind === 'balloon'){
+  } else if (o.kind === 1){
     ctx.fillStyle = 'hsl(' + o.hue + ',95%,55%)';
     ctx.beginPath(); ctx.ellipse(0, -3, 15, 19, 0, 0, 6.2832); ctx.fill(); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(0, 16); ctx.lineTo(-4, 22); ctx.lineTo(4, 22); ctx.closePath();
     ctx.fill(); ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,.85)';
     ctx.beginPath(); ctx.ellipse(-5, -9, 4, 6, -0.4, 0, 6.2832); ctx.fill();
-  } else if (o.kind === 'star'){
+  } else if (o.kind === 2){
     ctx.beginPath();
     for (let i = 0; i < 10; i++){
       const rr = i % 2 ? 8 : 19, a = (i / 10) * 6.2832 - 1.57;
@@ -1790,6 +1871,19 @@ function drawSparks(){
 }
 
 function draw(){
+  if (state === S.DIVE){
+    ctx.save();
+    if (shake > 0.4) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+    drawDive();
+    for (const p of parts){
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = 'rgb(' + p.c + ')';
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.2832); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+    return;
+  }
   ctx.save();
   if (shake > 0.4) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
 
@@ -1934,12 +2028,17 @@ function showKeys(first){
   const box = $('keys');
   box.innerHTML = '';
   for (const k of CONFIG.KEYS){
+    /* locked until the one before it is done, so none of them get skipped */
+    const idx  = CONFIG.KEYS.indexOf(k);
+    const open = idx === 0 || got[CONFIG.KEYS[idx - 1].id];
     const b = document.createElement('button');
-    b.className = 'key' + (got[k.id] ? ' done' : '');
-    b.innerHTML = `<span class="ic">${k.icon}</span><span class="lb">${k.label}</span>` +
-                  `<span class="st">${got[k.id] ? 'found' : 'tap'}</span>`;
+    b.className = 'key' + (got[k.id] ? ' done' : open ? '' : ' locked');
+    b.innerHTML = `<span class="ic">${got[k.id] || open ? k.icon : '🔒'}</span>` +
+                  `<span class="lb">${k.label}</span>` +
+                  `<span class="st">${got[k.id] ? 'found' : open ? 'tap' : 'locked'}</span>`;
     b.onclick = () => {
       if (got[k.id]) return;
+      if (!open){ sfx.bad(); buzz(30); note('keysNote', 'One at a time.'); return; }
       sfx.click();
       layer.hide('l-keys');
       setTimeout(() => openQuest(k.id), 380);
@@ -1972,10 +2071,15 @@ function openQuest(id){
   if (id === 'wish')     return openQuiz();
   if (id === 'surprise') return openDoors();
 }
+let huntGot = 0;
 function openHunt(){
   const grid = $('objGrid');
+  const need = CONFIG.OBJECTS.filter(o => o.key).length;
+  huntGot = 0;
   grid.innerHTML = '';
-  CONFIG.OBJECTS.forEach((o, n) => {
+  $('huntSub').textContent = CONFIG.HUNT_SUB;
+  $('huntCount').textContent = '0 / ' + need;
+  CONFIG.OBJECTS.forEach(o => {
     const b = document.createElement('button');
     b.className = 'obj';
     b.setAttribute('style', cellBg(CONFIG.ART.objects, 6, o.i));
@@ -1985,9 +2089,15 @@ function openHunt(){
       if (o.key){
         b.dataset.done = '1';
         b.classList.add('found');
+        huntGot++;
         sfx.good(); buzz([10, 40, 10]);
-        note('huntNote', CONFIG.HUNT_FOUND);
-        setTimeout(revealPhoto, 700);
+        $('huntCount').textContent = huntGot + ' / ' + need;
+        note('huntNote', o.line + ' &nbsp;<b>' +
+             (CONFIG.HUNT_PIECE[huntGot - 1] || '') + '</b>');
+        if (huntGot >= need){
+          note('huntNote', CONFIG.HUNT_FOUND);
+          setTimeout(revealPhoto, 900);
+        }
       } else {
         sfx.pick();
         note('huntNote', o.line);
@@ -2082,6 +2192,11 @@ function openDoors(){
       if (n === 2){ sfx.alarm(); shake = 18; buzz([40,60,40,60,120]); }
       else { sfx.clunk(); buzz(14); }
       note('doorNote', `<b>${d.res}</b><br>${d.det}`);
+      if (d.dive){
+        /* the floor gives way and the whole game changes */
+        setTimeout(() => { layer.hide('l-doors'); startDive(); }, 1700);
+        return;
+      }
       if (opened === 1){
         /* one is enough — the rest are there for anyone curious */
         setTimeout(() => {
@@ -2099,6 +2214,196 @@ function openDoors(){
   });
   note('doorNote', '');
   layer.show('l-doors');
+}
+
+/* ===================================================================
+   BEHIND THE THIRD DOOR.
+   Top-down, straight down. She steers by dragging left and right, and
+   the only thing she has to remember is to pull. If she forgets, it
+   opens anyway — nobody is landing badly on their birthday.
+   =================================================================== */
+function startDive(){
+  state = S.DIVE;
+  dive.on = true; dive.t = 0; dive.chute = 0; dive.pulled = false; dive.done = false;
+  dive.x = dive.tx = W / 2; dive.vx = 0; dive.spin = 0; dive.hit = 0;
+  dive.hazards = []; dive.sparks = []; dive.next = 0.9;
+  sfx.whoosh(); buzz([20, 60, 20]);
+  toast(CONFIG.DIVE.intro[0], 1300);
+  setTimeout(() => { if (state === S.DIVE) toast(CONFIG.DIVE.intro[1], 1400); }, 1500);
+  setTimeout(() => { if (state === S.DIVE) toast(CONFIG.DIVE.hint, 2000); }, 3100);
+  $('diveUI').classList.add('on');
+  document.body.classList.add('diving');
+}
+
+/* dragging anywhere steers her; a tap once the prompt is up pulls */
+function diveAt(x){ dive.tx = Math.max(46 * SC, Math.min(W - 46 * SC, x)); }
+cv.addEventListener('pointermove', e => {
+  if (state === S.DIVE && e.buttons) diveAt(e.clientX);
+}, { passive:true });
+cv.addEventListener('pointerdown', e => {
+  if (state !== S.DIVE) return;
+  diveAt(e.clientX);
+  if (dive.t / CONFIG.DIVE.seconds >= CONFIG.DIVE.pullAt) pullChute();
+}, { passive:true });
+
+function pullChute(){
+  if (dive.pulled) return;
+  dive.pulled = true;
+  sfx.whoosh(); sfx.good(); buzz([16, 60, 16, 60, 120]);
+  burst(dive.x, H * 0.40, '236,214,255', 30, 1.4);
+  toast(CONFIG.DIVE.pulled, 2000);
+  $('divePull').classList.remove('on');
+  setTimeout(endDive, 3400);
+}
+function endDive(){
+  if (dive.done) return;
+  dive.done = true;
+  $('diveUI').classList.remove('on');
+  document.body.classList.remove('diving');
+  state = S.QUEST;
+  dive.on = false;
+  toast(CONFIG.DIVE.after, 2600);
+  finishQuest('surprise', true);
+}
+
+const DIVE_KIND = [0, 1, 2];
+function updateDive(dt){
+  const D = CONFIG.DIVE;
+  dive.t += dt;
+  const k = Math.min(1, dive.t / D.seconds);
+
+  /* she follows the thumb, with weight */
+  dive.vx += ((dive.tx - dive.x) * 9 - dive.vx) * Math.min(1, dt * 8);
+  dive.x += dive.vx * dt;
+  dive.spin += ((dive.vx * 0.0016) - dive.spin) * Math.min(1, dt * 6);
+  if (dive.hit > 0) dive.hit -= dt;
+
+  const fall = dive.pulled ? 130 * SC : (620 + k * 260) * SC;
+
+  /* things she is falling past, coming up from below */
+  dive.next -= dt;
+  if (!dive.pulled && dive.next <= 0){
+    dive.next = 0.30 + Math.random() * 0.36;
+    dive.hazards.push({
+      x: 40 * SC + Math.random() * (W - 80 * SC),
+      y: H + 70 * SC,
+      kind: DIVE_KIND[Math.floor(Math.random() * 3)],
+      r: 34 * SC + Math.random() * 16 * SC,
+      sp: 0.85 + Math.random() * 0.4
+    });
+  }
+  for (const h of dive.hazards){
+    h.y -= fall * h.sp * dt;
+    if (h.dead || dive.hit > 0 || dive.pulled) continue;
+    if (Math.hypot(h.x - dive.x, h.y - H * 0.40) < h.r + 26 * SC){
+      h.dead = true;
+      dive.hit = 0.8; shake = 14; buzz(40);
+      sfx.clunk();
+      burst(h.x, h.y, '236,214,255', 14, 0.9);
+    }
+  }
+  dive.hazards = dive.hazards.filter(h => !h.dead && h.y > -120 * SC);
+
+  /* the rush of air, drawn as streaks */
+  dive.next2 = (dive.next2 || 0) - dt;
+  if (dive.next2 <= 0){
+    dive.next2 = 0.02;
+    dive.sparks.push({ x: Math.random() * W, y: H + 20, len: 30 + Math.random() * 90,
+                       a: 0.10 + Math.random() * 0.18 });
+  }
+  for (const q of dive.sparks) q.y -= fall * 1.25 * dt;
+  dive.sparks = dive.sparks.filter(q => q.y > -160);
+
+  if (dive.pulled) dive.chute = Math.min(1, dive.chute + dt * 2.2);
+
+  /* the prompt, and the safety net if she is enjoying herself too much */
+  if (!dive.pulled){
+    const ready = k >= D.pullAt;
+    $('divePull').classList.toggle('on', ready);
+    if (dive.t > D.seconds + 3.5) pullChute();
+  }
+  $('diveBar').firstElementChild.style.height = (100 - k * 100) + '%';
+}
+
+function drawDive(){
+  const D = CONFIG.DIVE;
+  const k = Math.min(1, dive.t / D.seconds);
+  /* looking straight down: dark sky above, the ground coming up warm */
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0,   mixc([10,5,22],  [26,14,44], k));
+  g.addColorStop(0.55,mixc([26,13,52], [60,32,86], k));
+  g.addColorStop(1,   mixc([48,24,86], [128,84,120], k));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  /* the ground, coming up. It is the only thing that says this is a fall
+     and not a screensaver. */
+  if (k > 0.35){
+    const g2 = Math.min(1, (k - 0.35) / 0.65);
+    const gy = H - H * 0.9 * g2 * g2;
+    const gg = ctx.createLinearGradient(0, gy, 0, H);
+    gg.addColorStop(0, 'rgba(150,104,120,0)');
+    gg.addColorStop(1, `rgba(${Math.round(120+70*g2)},${Math.round(88+50*g2)},${Math.round(110+40*g2)},${0.5*g2})`);
+    ctx.fillStyle = gg;
+    ctx.fillRect(0, gy, W, H - gy);
+    ctx.globalAlpha = 0.20 * g2;
+    ctx.fillStyle = '#2a1b3a';
+    for (let i = 0; i < 7; i++){
+      const fx = ((i * 137 + Math.sin(i) * 90) % W);
+      const fw = (60 + i * 24) * (0.4 + g2);
+      ctx.fillRect(fx - fw/2, gy + (H - gy) * (0.2 + (i % 3) * 0.22), fw, 14 * (0.4 + g2));
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.strokeStyle = 'rgba(226,214,255,.5)';
+  ctx.lineWidth = 1.4;
+  for (const q of dive.sparks){
+    ctx.globalAlpha = q.a;
+    ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(q.x, q.y + q.len); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  for (const h of dive.hazards){
+    if (ART.hazards) cellDraw(ART.hazards, 3, h.kind, h.x, h.y, h.r * 2.4);
+    else {
+      ctx.fillStyle = 'rgba(226,214,255,.5)';
+      ctx.beginPath(); ctx.arc(h.x, h.y, h.r, 0, 6.2832); ctx.fill();
+    }
+  }
+
+  const y = H * 0.40;
+  ctx.save();
+  ctx.translate(dive.x, y);
+  ctx.rotate(dive.spin);
+  if (dive.hit > 0 && Math.floor(dive.hit * 18) % 2) ctx.globalAlpha = 0.4;
+  if (dive.chute > 0.01 && ART.chute){
+    const w = 260 * SC * dive.chute;
+    const h2 = w * (ART.chute.naturalHeight / ART.chute.naturalWidth);
+    ctx.globalAlpha *= Math.min(1, dive.chute * 1.6);
+    ctx.drawImage(ART.chute, -w / 2, -h2 * 0.62, w, h2);
+    ctx.globalAlpha = 1;
+  }
+  if (ART.diver){
+    const w = 128 * SC * (1 - dive.chute * 0.35);
+    const h2 = w * (ART.diver.naturalHeight / ART.diver.naturalWidth);
+    ctx.drawImage(ART.diver, -w / 2, -h2 / 2, w, h2);
+  } else {
+    ctx.fillStyle = '#f3ecff';
+    ctx.beginPath(); ctx.arc(0, 0, 26 * SC, 0, 6.2832); ctx.fill();
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+function mixc(a, b, k){
+  return 'rgb(' + Math.round(a[0]+(b[0]-a[0])*k) + ',' +
+                  Math.round(a[1]+(b[1]-a[1])*k) + ',' +
+                  Math.round(a[2]+(b[2]-a[2])*k) + ')';
+}
+function cellDraw(im, cells, i, x, y, w){
+  const cw = im.naturalWidth / cells, ch = im.naturalHeight;
+  const h = w * (ch / cw);
+  ctx.drawImage(im, i * cw, 0, cw, ch, x - w / 2, y - h / 2, w, h);
 }
 
 /* ---------------------------------------------------------- the room */
