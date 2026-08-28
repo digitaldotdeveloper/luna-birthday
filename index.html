@@ -558,7 +558,7 @@
 
 <div id="hud">
   <div id="candleCount">candles<b>0</b></div>
-  <div id="frosting"><i class="pip"></i><i class="pip"></i><i class="pip"></i></div>
+  <div id="frosting"></div>
 </div>
 
 <div id="toast"></div>
@@ -690,6 +690,7 @@
 const CONFIG = {
   NAME: "Luna",
   AGE: 23,                    // candles to light, and the number in the pool
+  LIVES: 5,                   // milkshakes she can wear before it is over
   GOAL: 23,                   // clip-art to swat. Keep it equal to AGE.
 
   /* ---- optional art. Missing files fall back to drawn versions. ---- */
@@ -1177,7 +1178,7 @@ function resetRun(keep){
     tut = 0; tutT = 0;
     gift.on = false; gift.t = 0; gift.done = false;
   }
-  frosting = 3; shake = 0; outro = 0;
+  frosting = CONFIG.LIVES; shake = 0; outro = 0;
   combo = 0; slow = 0; land = 0; comboIdx = 0; hitIdx = 0; runner.pose = -1;
   flash = 0;
   scroll = 0; speed = 430 * SC;
@@ -1186,6 +1187,15 @@ function resetRun(keep){
   paintHUD();
 }
 function paintHUD(){
+  const box = $('frosting');
+  if (box.children.length !== CONFIG.LIVES){          // built from the config
+    box.innerHTML = '';
+    for (let i = 0; i < CONFIG.LIVES; i++){
+      const pip = document.createElement('i');
+      pip.className = 'pip';
+      box.appendChild(pip);
+    }
+  }
   $('candleCount').innerHTML = 'candles<b>' + candles + '</b>';
   document.querySelectorAll('#frosting .pip')
           .forEach((p, i) => p.classList.toggle('gone', i >= frosting));
@@ -1400,7 +1410,7 @@ function startGame(){
 /* ============================================================ the run ===
    He runs, the world comes at him. One thumb: tap to jump, hold for
    height. Candles ride above the obstacles, so the jump earns them.     */
-const JUMP_V = -830, GRAV = 2600, GRAV_HELD = 1700;
+const JUMP_V = -880, GRAV = 2320, GRAV_HELD = 1480;
 
 function jump(){
   if (state !== S.PLAY) return;
@@ -1436,7 +1446,7 @@ function teach(dt){
   gift.t += dt;
   if (!gift.done && gift.t > GIFT_FALL){
     gift.done = true;
-    frosting = 3; paintHUD();
+    frosting = CONFIG.LIVES; paintHUD();
     sfx.key(); buzz([12, 50, 12]);
     burst(runner.x, groundY - 96 * SC, '255,90,130', 22, 1.1);
     toast(CONFIG.TUTORIAL.give, 2200);
@@ -1468,7 +1478,7 @@ function spawnAhead(){
   }
   /* and a stretch of clear deck before the next one */
   /* close enough together that twenty-three does not take all night */
-  nextSpawn = x + (640 + Math.random() * 330) * SC * (1.22 - prog * 0.20);
+  nextSpawn = x + (660 + Math.random() * 330) * SC * (1.18 - prog * 0.10);
 }
 function burst(x, y, col, n, big){
   for (let i = 0; i < n; i++){
@@ -1567,8 +1577,8 @@ function update(dt){
       continue;
     }
     if (runner.hurt > 0) continue;
-    if (Math.abs(sx - runner.x) < o.r + 15 * SC &&
-        runner.y > groundY - o.r * 2.0){
+    if (Math.abs(sx - runner.x) < o.r + 2 * SC &&
+        runner.y > groundY - o.r * 1.72){
       o.dead = true;
       frosting--; shake = 18; runner.hurt = 1.15; combo = 0;
       sfx.hurt(); buzz([12, 40, 12]);
@@ -1586,8 +1596,8 @@ function update(dt){
     p.ph += dt * 3;
     if (state !== S.PLAY) continue;
     const sx = p.x - scroll;
-    if (Math.abs(sx - runner.x) < 36 * SC &&
-        p.y > runner.y - 168 * SC && p.y < runner.y + 22 * SC){
+    if (Math.abs(sx - runner.x) < 52 * SC &&
+        p.y > runner.y - 190 * SC && p.y < runner.y + 34 * SC){
       p.dead = true;
       const gain = p.heart ? 3 : 1;
       candles = Math.min(CONFIG.AGE, candles + gain);
