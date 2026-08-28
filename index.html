@@ -512,6 +512,9 @@
   }
   #finaleLine.in{ opacity:1; transform:translateY(0); }
   #finaleLine.sign{ font-size:clamp(19px,5vw,24px); color:var(--lilac); }
+  #finaleLine .sign{ display:block; margin-top:18px; font-style:normal;
+                     font-family:'Nunito',sans-serif; font-weight:800;
+                     font-size:clamp(16px,4.4vw,20px); color:var(--lilac); }
 
   /* how far there is left to fall, and the one thing she has to do */
   #diveUI{ position:fixed; inset:0; z-index:22; pointer-events:none;
@@ -694,6 +697,7 @@ const CONFIG = {
     run:      "assets/luna-run.webp", // HER run cycle — one strip, 5 cells: 4 running + 1 jump
     himcake:  "assets/him-cake.webp", // him, waiting at the end holding the cake
     himstand: "assets/him-stand.webp",// him, arms folded, the moment the card comes down
+    himwalk:  "assets/him-walk.webp", // 5 cells: him on his own legs
     poses:    "assets/luna-poses.webp",// her extra poses — 4 cells: idle, land, cheer, kiss
     chalet:   "assets/chalet.webp",   // the villa, its lit glass and the pines
     room:     "assets/room.webp",     // where it ends
@@ -749,6 +753,15 @@ const CONFIG = {
   ASK_HEX:    "#8b5cf6",
   ASK_RIGHT:  "Obviously",
   /* he is standing right there while the card comes down */
+
+  /* ---- the lesson, before the run proper ---- */
+  TUTORIAL: {
+    jump: "tap anywhere to jump",
+    warn: "and stay off the milkshakes",
+    hit:  "…that is what they do.",
+    give: "here. take one of mine.",
+    back: "three again. mind the milkshakes."
+  },
 
   /* ---- lines that land while she plays (one every 6 candles) ---- */
   LINES: [
@@ -853,7 +866,7 @@ const CONFIG = {
 
   /* the last thing it says, one line at a time */
   /* one line, and his name under it. Nothing after that. */
-  FINAL_LINES: [ "Feliz cumpleaños, Luna. 💜" ],
+  FINAL_LINES: [ "Feliz cumpleaños 💜" ],
   SIGNED: "— Firass",
   /* set to false and this line never appears */
   FLIRTY_ON: false,
@@ -1106,7 +1119,10 @@ let candles = 0, frosting = 3, shake = 0, t = 0, lineIdx = 0;
 let scroll = 0, speed = 0, nextSpawn = 0, breakLine = -1, glow = 0;
 /* nothing is thrown at her until she has worked out that a tap is a jump */
 let warm = 0, taught = false, hintA = 0;
-const WARM_AFTER = 6, WARM_CAP = 15;   // she gets the deck to herself first
+/* the lesson runs in four beats: the warning, the milkshake that lands,
+   him walking in with a life, and then the game proper */
+let tut = 0, tutT = 0;
+const him = { on:false, x:0, dir:-1, ft:0, gave:false, done:false, hearts:[] };
 let learning = false;                  /* the opening stretch of the run */
 let colour = 0, unlocking = false;     /* 0 = drained, 1 = her colour, everywhere */
 let dark = 1;                          /* and until then there is nothing to see */
@@ -1160,6 +1176,8 @@ function resetRun(keep){
   flash = 0;
   scroll = 0; speed = 300 * SC; nextSpawn = W * 0.9;
   warm = 0; taught = false; hintA = 0;
+  tut = 0; tutT = 0;
+  him.on = false; him.gave = false; him.done = false; him.hearts = [];
   runner.y = groundY; runner.vy = 0; runner.ground = true; runner.ft = 0; runner.hurt = 0;
   paintHUD();
 }
@@ -1403,6 +1421,45 @@ window.addEventListener('keyup',   e => { if (e.code === 'Space') runner.held = 
 
 const LETTERS = ['H','A','P','P','Y','B','D','A','Y','!'];
 /* the four milkshakes, by cell index in the strip */
+/* Beat 0 warns her. Beat 1 sends one milkshake, which always lands —
+   that is the point of it. Beat 2 is him, on foot, with a heart.      */
+function teach(dt){
+  if (tut === 0){
+    if (tutT > 5.4 || (taught && tutT > 3.6)){
+      tut = 1; tutT = 0;
+      obstacles.push({ x: scroll + W + 60, kind: 1, r: 22 * SC, tall:false, tut:true,
+                       ch:'!', hue: 320, spin: 0, ds: 1.4 });
+    }
+    return;
+  }
+  if (tut !== 2) return;
+  him.ft += dt * 9;
+  const stop = runner.x + 170 * SC;
+  if (!him.gave){
+    him.x += (stop - him.x) * Math.min(1, dt * 2.4);
+    if (Math.abs(him.x - stop) < 7 * SC){
+      him.gave = true; tutT = 0;
+      him.hearts.push({ t: 0 });
+      toast(CONFIG.TUTORIAL.give, 1800);
+      sfx.good();
+    }
+    return;
+  }
+  for (const q of him.hearts) q.t += dt;
+  if (!him.done && him.hearts[0] && him.hearts[0].t > 0.85){
+    him.done = true;
+    frosting = 3; paintHUD();
+    sfx.key(); buzz([12, 50, 12]);
+    toast(CONFIG.TUTORIAL.back, 2400);
+  }
+  if (tutT > 3.6){                       // and then he goes, at a run
+    him.dir = 1;
+    him.ft += dt * 9;                    // twice the legs, he is not strolling
+    him.x += 700 * SC * dt;
+    if (him.x > W + 150 * SC){ tut = 3; him.on = false; }
+  }
+}
+
 function spawnAhead(){
   const prog = candles / CONFIG.GOAL;
   const x = scroll + W + 60;
@@ -1469,10 +1526,13 @@ function update(dt){
   if (state === S.PLAY){
     /* the opening stretch: she runs, nothing comes, and the speed does not
        climb — it ends a beat after her first jump, or on its own. */
-    warm += dt;
-    learning = !(taught && warm > WARM_AFTER) && warm < WARM_CAP;
-    hintA += ((learning ? 1 : 0) - hintA) * Math.min(1, dt * 3.2);
-    $('hud').classList.toggle('on', !learning);
+    warm += dt; tutT += dt;
+    teach(dt);
+    if (warm > 34) tut = 3;                       // nothing may strand her
+    learning = tut < 3;
+    hintA += ((tut <= 1 ? 1 : 0) - hintA) * Math.min(1, dt * 3.2);
+    /* the counter turns up when the milkshake has cost her something */
+    $('hud').classList.toggle('on', tut >= 2);
     if (learning) nextSpawn = scroll + W * 0.9;      // and the first one is not right there
     const prog = learning ? 0 : candles / CONFIG.GOAL;
     speed += ((300 + prog * 300) * SC - speed) * Math.min(1, dt * 0.7);
@@ -1509,6 +1569,19 @@ function update(dt){
         slow = 0.34; sfx.near();
         burst(sx, groundY - o.r * 2, '255,240,205', 8, 0.6);
       }
+    }
+    /* the teaching one connects however she is standing */
+    if (o.tut && !o.dead && Math.abs(sx - runner.x) < o.r + 15 * SC){
+      o.dead = true;
+      frosting--; shake = 18; runner.hurt = 1.15;
+      sfx.hurt(); buzz([12, 40, 12]);
+      burst(sx, groundY - o.r, '255,120,190', 22, 1.2);
+      paintHUD();
+      toast(CONFIG.TUTORIAL.hit, 1600);
+      tut = 2; tutT = 0;
+      him.on = true; him.x = W + 130 * SC; him.dir = -1;
+      him.gave = false; him.done = false; him.hearts = [];
+      continue;
     }
     if (runner.hurt > 0) continue;
     if (Math.abs(sx - runner.x) < o.r + 15 * SC &&
@@ -2119,7 +2192,16 @@ function drawEnding(){
   ctx.fillStyle = 'rgba(10,4,22,.22)';
   ctx.beginPath(); ctx.ellipse(x, y + 3 * SC, 30 * SC, 6 * SC, 0, 0, 6.2832); ctx.fill();
 
-  if (ART.himcake){
+  if (e < 0.995 && ART.himwalk){
+    /* he does not slide in holding it — he walks */
+    const cw = ART.himwalk.naturalWidth / 5, ch = ART.himwalk.naturalHeight;
+    const h = 205 * SC, w = h * (cw / ch);
+    ctx.save();
+    ctx.translate(x, 0); ctx.scale(-1, 1);
+    ctx.drawImage(ART.himwalk, Math.floor(t * 9) % 4 * cw, 0, cw, ch,
+                  -w / 2, y - h, w, h);
+    ctx.restore();
+  } else if (ART.himcake){
     const h = 205 * SC, w = h * (ART.himcake.naturalWidth / ART.himcake.naturalHeight);
     ctx.drawImage(ART.himcake, x - w / 2, y - h, w, h);
   } else {
@@ -2129,7 +2211,7 @@ function drawEnding(){
   }
   /* the candles she earned, burning on top of what he is holding */
   const cy = y - 152 * SC, span = 32 * SC, ROWS = 4;   /* sat on the cake he is holding */
-  const shown = state >= S.QUEST ? lit : candles;
+  const shown = e < 0.995 ? 0 : (state >= S.QUEST ? lit : candles);
   for (let i = 0; i < shown; i++){
     const row = i % ROWS, kk = Math.floor(i / ROWS);
     const n = Math.max(1, Math.ceil((candles - row) / ROWS));
@@ -2228,6 +2310,7 @@ function draw(){
   drawProps();
   drawEnding();
   drawFirass();
+  drawTutorHim();
 
   for (const p of pickups)   drawPickup(p);
   for (const o of obstacles) drawObstacle(o);
@@ -2875,6 +2958,58 @@ function wrapped(text, cx, cy, maxW, lh){
   lines.forEach((l, i) => ctx.fillText(l, cx, top + i * lh));
 }
 
+function heartPath(cx, cy, r){
+  ctx.beginPath();
+  ctx.moveTo(cx, cy + r * 0.78);
+  ctx.bezierCurveTo(cx - r * 1.5, cy - r * 0.35, cx - r * 0.58, cy - r * 1.25, cx, cy - r * 0.36);
+  ctx.bezierCurveTo(cx + r * 0.58, cy - r * 1.25, cx + r * 1.5, cy - r * 0.35, cx, cy + r * 0.78);
+  ctx.closePath();
+}
+
+/* him, on his own legs, walking in to hand her a life back */
+function drawTutorHim(){
+  if (!him.on) return;
+  const y = groundY, h = 205 * SC;
+  ctx.fillStyle = 'rgba(10,4,22,.22)';
+  ctx.beginPath(); ctx.ellipse(him.x, y + 3 * SC, 30 * SC, 6 * SC, 0, 0, 6.2832); ctx.fill();
+  ctx.save();
+  if (ART.himwalk){
+    /* five cells, but the fifth is a jump — he walks on the first four */
+    const cells = 5, cw = ART.himwalk.naturalWidth / cells, ch = ART.himwalk.naturalHeight;
+    const w = h * (cw / ch);
+    ctx.translate(him.x, 0);
+    if (him.dir < 0) ctx.scale(-1, 1);
+    ctx.drawImage(ART.himwalk, Math.floor(him.ft) % 4 * cw, 0, cw, ch,
+                  -w / 2, y - h, w, h);
+  } else if (ART.himstand){
+    const w = h * (ART.himstand.naturalWidth / ART.himstand.naturalHeight);
+    ctx.drawImage(ART.himstand, him.x - w / 2, y - h, w, h);
+  }
+  ctx.restore();
+  /* the heart, on its way over to her */
+  for (const q of him.hearts){
+    const k = Math.min(1, q.t / 0.85);
+    const hx = him.x + (runner.x - him.x) * k;
+    const hy = y - (118 + Math.sin(k * 3.14159) * 76) * SC;
+    ctx.save();
+    ctx.globalAlpha = q.t < 0.85 ? 1 : Math.max(0, 1 - (q.t - 0.85) * 2.2);
+    const r = (13 + k * 7) * SC;
+    const g2 = ctx.createRadialGradient(hx, hy, 2, hx, hy, r * 2.6);
+    g2.addColorStop(0, 'rgba(255,70,110,.55)');
+    g2.addColorStop(1, 'rgba(255,70,110,0)');
+    ctx.fillStyle = g2;
+    ctx.beginPath(); ctx.arc(hx, hy, r * 2.6, 0, 6.2832); ctx.fill();
+    ctx.fillStyle = '#ff3355';
+    heartPath(hx, hy, r);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.45)';
+    ctx.beginPath();
+    ctx.ellipse(hx - r * 0.34, hy - r * 0.38, r * 0.2, r * 0.13, -0.5, 0, 6.2832);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
 /* a thumb tapping the glass, so she does not have to be told twice */
 function drawTapHint(){
   const x = W / 2, y = H * 0.80, a = hintA;
@@ -2904,7 +3039,10 @@ function drawTapHint(){
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = "800 " + Math.round(15 * SC) + "px 'Nunito',sans-serif";
   ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 16;
-  ctx.fillText('tap anywhere to jump', x, y - 46 * SC);
+  ctx.fillText(CONFIG.TUTORIAL.jump, x, y - 46 * SC);
+  ctx.font = "800 " + Math.round(13 * SC) + "px 'Nunito',sans-serif";
+  ctx.fillStyle = '#ffc2d8';
+  ctx.fillText(CONFIG.TUTORIAL.warn, x, y - 70 * SC);
   ctx.restore();
 }
 
@@ -3003,7 +3141,10 @@ function blowOut(){
 function finalWords(){
   const wrap = $('finale'), line = $('finaleLine');
   const lines = CONFIG.FINAL_LINES.slice();
-  lines.push('<span class="sign">' + CONFIG.SIGNED + '</span>');
+  /* the last thing on the screen is the wish with his name under it */
+  const last = lines.pop() || '';
+  lines.push((last ? last + '<br>' : '') +
+             '<span class="sign">' + CONFIG.SIGNED + '</span>');
   if (CONFIG.FLIRTY_ON && CONFIG.FLIRTY_LINE) lines.push(CONFIG.FLIRTY_LINE);
   wrap.classList.add('on');
   let i = 0, timer = null;
@@ -3013,7 +3154,7 @@ function finalWords(){
     line.classList.remove('in');
     setTimeout(() => {
       line.innerHTML = lines[i];
-      line.className = 'in' + (lines[i].includes('sign') ? ' sign' : '');
+      line.className = 'in' + (lines[i].startsWith('<span class="sign"') ? ' sign' : '');
       line.id = 'finaleLine';
       i++;
       timer = setTimeout(next, 2500);
