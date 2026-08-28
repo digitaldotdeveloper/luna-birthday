@@ -1232,17 +1232,12 @@ function fakeLoad(){
     run();
   });
 }
-/* the visitor counter, going up by one every few seconds, only ever by one */
-let visits = null;
 function startCard(){
   $('ieUrl').textContent = CONFIG.ADDRESS;
-  fakeLoad().then(() => {
-    $('ieBody').classList.add('on');
-    let n = 23;
-    visits = setInterval(() => {
-      $('a1vis').textContent = String(++n).padStart(6, '0');
-    }, 5200);
-  });
+  /* the visitor counter never moves: it is not counting visitors, it is
+     how old she is turning */
+  $('a1vis').textContent = String(CONFIG.AGE).padStart(6, '0');
+  fakeLoad().then(() => $('ieBody').classList.add('on'));
 }
 
 function dialog(text, i){
@@ -1294,7 +1289,6 @@ $('bigbtn').onclick = () => {
 function deadBeat(){
   if (state !== S.CARD) return;
   state = S.DEAD;
-  clearInterval(visits);
   $('card').classList.add('over');            // everything on the page stops
   setTimeout(() => { if (state === S.DEAD) malfunction(); }, 1150);
 }
