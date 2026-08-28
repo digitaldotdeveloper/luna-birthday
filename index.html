@@ -335,13 +335,23 @@
   #swatches{ display:flex; gap:18px; margin-top:30px; flex-wrap:wrap; justify-content:center; }
   .sw{
     width:62px; height:62px; border-radius:50%; border:0; cursor:pointer; padding:0;
-    background:var(--sw); box-shadow:0 0 0 2px rgba(255,255,255,.14), 0 10px 26px rgba(0,0,0,.5);
+    background:var(--sw); box-shadow:0 0 0 2px rgba(255,255,255,.42), 0 10px 26px rgba(0,0,0,.5);
+    /* the ring carries the black one, which is otherwise dark on dark */
     transition:transform .14s ease, box-shadow .2s ease;
   }
   .sw:active{ transform:scale(.9); }
   .sw.wrong{ animation:nope .42s ease; }
   @keyframes nope{ 25%{transform:translateX(-9px)} 50%{transform:translateX(9px)} 75%{transform:translateX(-5px)} }
   .sw.right{ transform:scale(1.22); box-shadow:0 0 0 4px rgba(255,255,255,.5), 0 0 60px 12px var(--sw); }
+  .sw.used{ opacity:.4; }
+  /* hers is not on the board until the other three are gone */
+  .sw.hidden{ display:none; }
+  .sw.reveal{ animation:swIn .7s cubic-bezier(.2,1.5,.4,1) both; }
+  @keyframes swIn{
+    from{ transform:scale(0); box-shadow:0 0 0 2px rgba(255,255,255,.14), 0 0 0 0 var(--sw); }
+    60% { box-shadow:0 0 0 4px rgba(255,255,255,.5), 0 0 70px 22px var(--sw); }
+    to  { transform:scale(1); }
+  }
   #askReply{ min-height:1.5em; }
 
   #reply{ margin-top:22px; font-family:'Fraunces',Georgia,serif; font-style:italic;
@@ -728,12 +738,15 @@ const CONFIG = {
   /* ---- the way in. Get it right and the whole place comes on. ---- */
   ASK_TITLE:  "prove it's you.",
   ASK_BODY:   "I'm not letting just anyone in here.<br>What's your colour, birthday girl?",
+  /* she has to rule all three out before hers turns up */
+  ASK_COLOURS: [
+    { c:"white", hex:"#f7f4ec", say:"Pureness" },
+    { c:"black", hex:"#15111c", say:"Majliss 3aza" },
+    { c:"red",   hex:"#e0243a", say:"Vampire" }
+  ],
   ASK_ANSWER: "purple",
-  ASK_WRONG:  [ "…no. cute, but no.",
-                "wrong. and you're doing that face again.",
-                "nope. I know you better than that.",
-                "try again, gorgeous." ],
-  ASK_RIGHT:  "obviously. it's you.",
+  ASK_HEX:    "#8b5cf6",
+  ASK_RIGHT:  "Obviously",
   /* he is standing right there while the card comes down */
 
   /* ---- lines that land while she plays (one every 6 candles) ---- */
@@ -1293,39 +1306,53 @@ function askColour(){
   $('askBody').innerHTML    = CONFIG.ASK_BODY;
   const box = $('swatches');
   box.innerHTML = '';
-  const opts = [
-    { c:'rose',   hex:'#ff7aa8' }, { c:'teal',   hex:'#3ec9c0' },
-    { c:'purple', hex:'#8b5cf6' }, { c:'gold',   hex:'#ffcf6a' }
-  ];
-  for (let i = opts.length - 1; i > 0; i--){          // so it is never muscle memory
-    const j = Math.floor(Math.random() * (i + 1));
-    [opts[i], opts[j]] = [opts[j], opts[i]];
-  }
-  let wrongs = 0;
-  for (const o of opts){
+
+  const swatch = (c, hex) => {
     const b = document.createElement('button');
     b.className = 'sw';
-    b.style.setProperty('--sw', o.hex);
-    b.setAttribute('aria-label', o.c);
+    b.style.setProperty('--sw', hex);
+    b.setAttribute('aria-label', c);
+    box.appendChild(b);
+    return b;
+  };
+
+  /* hers is built first so it sits last on the row, and hidden until
+     she has said what she is not */
+  const hers = swatch(CONFIG.ASK_ANSWER, CONFIG.ASK_HEX);
+  hers.classList.add('hidden');
+  hers.onclick = () => {
+    if (state !== S.ASK) return;
+    startMusic();               // inside the tap, or Safari refuses
+    hers.classList.add('right');
+    $('askReply').textContent = CONFIG.ASK_RIGHT;
+    tone(523.25, 0, 0.5, { type:'triangle', gain:0.13 });
+    tone(783.99, 0.09, 0.6, { type:'triangle', gain:0.11 });
+    buzz([14, 50, 14]);
+    setTimeout(unlock, 900);
+  };
+
+  const tried = new Set();
+  for (const o of CONFIG.ASK_COLOURS){
+    const b = swatch(o.c, o.hex);
+    box.insertBefore(b, hers);            // the three go in front of hers
     b.onclick = () => {
       if (state !== S.ASK) return;
-      if (o.c === CONFIG.ASK_ANSWER){
-        startMusic();           // inside the tap, or Safari refuses
-        b.classList.add('right');
-        $('askReply').textContent = CONFIG.ASK_RIGHT;
-        tone(523.25, 0, 0.5, { type:'triangle', gain:0.13 });
-        tone(783.99, 0.09, 0.6, { type:'triangle', gain:0.11 });
-        buzz([14, 50, 14]);
-        setTimeout(unlock, 900);
-      } else {
-        b.classList.remove('wrong'); void b.offsetWidth; b.classList.add('wrong');
-        $('askReply').textContent = CONFIG.ASK_WRONG[wrongs++ % CONFIG.ASK_WRONG.length];
-        tone(180, 0, 0.2, { type:'sawtooth', gain:0.1, slide:110 });
-        buzz(40);
+      b.classList.remove('wrong'); void b.offsetWidth; b.classList.add('wrong');
+      b.classList.add('used');
+      $('askReply').textContent = o.say;
+      tone(180, 0, 0.2, { type:'sawtooth', gain:0.1, slide:110 });
+      buzz(40);
+      tried.add(o.c);
+      if (tried.size === CONFIG.ASK_COLOURS.length && hers.classList.contains('hidden')){
+        setTimeout(() => {
+          hers.classList.remove('hidden');
+          hers.classList.add('reveal');
+          sfx.key(); buzz([10, 40, 10]);
+        }, 620);
       }
     };
-    box.appendChild(b);
   }
+
   $('askReply').innerHTML = '&nbsp;';
   $('s-ask').classList.add('on');
 }
