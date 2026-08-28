@@ -1170,14 +1170,18 @@ function buildHills(){
 
 function resetRun(keep){
   obstacles = []; pickups = []; parts = []; floats = []; props = [];
-  if (!keep){ candles = 0; lineIdx = 0; tauntIdx = 0; }
+  if (!keep){
+    candles = 0; lineIdx = 0; tauntIdx = 0;
+    /* the lesson is only for the first time she ever runs */
+    warm = 0; taught = false; hintA = 0;
+    tut = 0; tutT = 0;
+    gift.on = false; gift.t = 0; gift.done = false;
+  }
   frosting = 3; shake = 0; outro = 0;
   combo = 0; slow = 0; land = 0; comboIdx = 0; hitIdx = 0; runner.pose = -1;
   flash = 0;
-  scroll = 0; speed = 300 * SC; nextSpawn = W * 0.9;
-  warm = 0; taught = false; hintA = 0;
-  tut = 0; tutT = 0;
-  gift.on = false; gift.t = 0; gift.done = false;
+  scroll = 0; speed = 350 * SC;
+  nextSpawn = (keep ? W * 2.1 : W * 0.9);   // a breath before the first one back
   runner.y = groundY; runner.vy = 0; runner.ground = true; runner.ft = 0; runner.hurt = 0;
   paintHUD();
 }
@@ -1471,7 +1475,7 @@ function spawnAhead(){
   /* and a stretch of clear deck before the next one */
   /* twenty-three is a lot to collect, so it is the deck between them that
      makes the run, not the number of them */
-  nextSpawn = x + (760 + Math.random() * 430) * SC * (1.22 - prog * 0.34);
+  nextSpawn = x + (870 + Math.random() * 490) * SC * (1.22 - prog * 0.34);
 }
 function burst(x, y, col, n, big){
   for (let i = 0; i < n; i++){
@@ -1522,7 +1526,7 @@ function update(dt){
     $('hud').classList.toggle('on', tut >= 2);
     if (learning) nextSpawn = scroll + W * 0.9;      // and the first one is not right there
     const prog = learning ? 0 : candles / CONFIG.GOAL;
-    speed += ((300 + prog * 300) * SC - speed) * Math.min(1, dt * 0.7);
+    speed += ((350 + prog * 330) * SC - speed) * Math.min(1, dt * 0.7);
   }
   if (state === S.PLAY || state === S.WON) scroll += speed * dt;
 
